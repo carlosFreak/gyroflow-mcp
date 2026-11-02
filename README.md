@@ -1,94 +1,132 @@
 # gyroflow-mcp
 
-An [MCP](https://modelcontextprotocol.io) server that wraps the
-[Gyroflow](https://gyroflow.xyz) CLI so an LLM/agent can stabilize video,
-inspect footage metadata, and look up lens profiles - through MCP tools,
-resources, and prompts.
+Stabilize drone and action-camera footage by asking your AI agent, using your
+own [Gyroflow](https://gyroflow.xyz) settings. This [MCP](https://modelcontextprotocol.io)
+server wraps the Gyroflow CLI so you don't have to open and export clips one by one.
+
+> Stabilize the clips in ~/Desktop/DRON/Pavo20Pro with my 16-9.gyroflow preset
+
+Everything runs locally: your footage is never uploaded by this server. The only
+network request it makes is downloading Gyroflow's public lens-profile database
+at startup.
+
+Fork of [Errorist79/gyroflow-mcp](https://github.com/Errorist79/gyroflow-mcp),
+adding support for the free Mac App Store build of Gyroflow.
 
 ## Project status
 
-This is an experimental hobby project. I built it while learning Gyroflow for my own drone footage, so some options or assumptions may be incomplete or wrong.
+Experimental. Real-footage testing so far covers one setup: Gyroflow 1.6.3 from
+the Mac App Store on Apple Silicon, with DJI O4 Pro clips on the internal disk.
 
-It ships as a **single self-contained Go binary**: no virtualenv, no Node, no
-runtime dependencies, and no flags or environment variables. The server speaks
-MCP over stdio and is configured purely by your MCP client's config file (a
-path to the binary).
+Not tested yet: the DMG/Homebrew build with these changes, clips on an external
+disk or SD card, several clips in one job, other cameras, and a Gyroflow install
+that has never been opened.
 
-## Requirements
+## Quick start
 
-- **Go 1.25+** (to build).
-- **Gyroflow installed yourself.** gyroflow-mcp does not bundle or download
-  Gyroflow - it *detects* an already-installed binary at startup. Get it from
-  <https://gyroflow.xyz/download>.
-
-> ### macOS: App Store or DMG / Homebrew
->
-> Both builds work, and `gyroflow_doctor` tells you which one was detected.
->
-> - **DMG or Homebrew** (`brew install --cask gyroflow`): the CLI is driven directly.
-> - **Mac App Store**: the sandbox only lets its CLI access
->   `~/Library/Application Support/Gyroflow/`, so each job clones the clips into
->   a work folder there, renders, moves the result next to the original (or to
->   `out_params.output_folder`) and removes the work folder.
->
-> With the App Store build, clips on another disk need free space on the internal
-> disk for the copy and the render, and `export_project` and `export_stmap` are
-> not available because their output would reference a temporary copy.
-
-## Installation
-
-From source:
+You need [Go 1.25+](https://go.dev/dl/) to build (`brew install go`) and Gyroflow
+from the [Mac App Store](https://apps.apple.com/app/gyroflow/id6447994244) or
+[its download page](https://gyroflow.xyz/download). This server detects Gyroflow;
+it does not install it.
 
 ```sh
-git clone https://github.com/Errorist79/gyroflow-mcp
+git clone https://github.com/carlosFreak/gyroflow-mcp
 cd gyroflow-mcp
-go build -o ./bin/gyroflow-mcp ./cmd/gyroflow-mcp
+go build -o bin/gyroflow-mcp ./cmd/gyroflow-mcp
+claude mcp add --scope user gyroflow-mcp -- "$PWD/bin/gyroflow-mcp"
 ```
 
-Or, once published, via the Go toolchain:
+Restart Claude Code, then ask it to stabilize a clip. The registration points at
+the built binary, so keep this folder where it is.
 
-```sh
-go install github.com/Errorist79/gyroflow-mcp/cmd/gyroflow-mcp@latest
-```
-
-Note the resulting binary's absolute path - you reference it in your MCP client
-config below.
-
-## Client configuration
-
-The binary takes no arguments and reads no environment variables, so every
-client config is just a `command` pointing at it. Replace
-`/ABSOLUTE/PATH/TO/gyroflow-mcp` accordingly.
-
-**Claude Code:**
-
-```sh
-claude mcp add gyroflow-mcp -- /ABSOLUTE/PATH/TO/gyroflow-mcp
-```
-
-**Claude Desktop / Cursor / other stdio MCP clients** - add to the client's
-`mcpServers` config:
+For Claude Desktop, Cursor and other stdio MCP clients, add this to the client's
+`mcpServers` config (Claude Desktop:
+`~/Library/Application Support/Claude/claude_desktop_config.json`; Cursor:
+`~/.cursor/mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "gyroflow-mcp": {
-      "command": "/ABSOLUTE/PATH/TO/gyroflow-mcp",
+      "command": "/ABSOLUTE/PATH/TO/bin/gyroflow-mcp",
       "args": []
     }
   }
 }
 ```
 
-(Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`;
-Cursor: `~/.cursor/mcp.json` or `.cursor/mcp.json`.)
+## Before you start: does your camera record gyro data?
 
-## Usage
+Gyroflow stabilizes using motion data recorded in the clip. FPV cameras such as
+the DJI O3/O4 and most action cameras record it; gimbal drones such as the DJI
+Mini, Air and Mavic usually don't. Ask your agent to check a clip, which uses
+`probe_metadata` and reports `has_gyro`.
+
+For best results, record with in-camera stabilization (RockSteady, EIS) turned off.
+
+## Use your own settings
+
+Export your Gyroflow settings once and reuse them on every clip:
+
+1. Open a clip in Gyroflow and adjust it until you like the result.
+2. Click the arrow next to **Export** and choose **Create settings preset**.
+3. Save the `.gyroflow` file and give your agent its path.
+
+When choosing what to include:
+
+- **Include** stabilization settings, codec, bitrate and output size.
+- **Leave out** lens profile (usually detected from the clip), keyframes, and the
+  approximate gyro offset, which belong to one clip.
+
+Output size is what sets the aspect ratio, not the preset's name, and it applies
+to every clip. Make one preset per format. For a 3840x2880 source, these sizes
+avoid upscaling:
+
+| Format | Output size |
+|--------|-------------|
+| 4:3 | 3840x2880 |
+| 16:9 | 3840x2160 |
+| 1:1 | 2880x2880 |
+| 9:16 | 1620x2880 |
+
+The crop is centered, so 9:16 loses the most from the sides.
+
+Any output folder or filename stored in a preset is ignored. A preset can also
+contain `frame_readout_time`, which suits the recording mode it was exported
+from; export a separate preset for other modes.
+
+## Where the results go
+
+Each result is saved next to the original as `<name>_stabilized.<ext>`, or with
+the suffix and output folder you ask for. Originals are not modified, and an
+existing output is only replaced if you ask to overwrite it.
+
+## App Store or DMG / Homebrew
+
+`gyroflow_doctor` tells you which build was detected. Both are free.
+
+| | Mac App Store | DMG / Homebrew |
+|---|---|---|
+| How it runs | Through a temporary work folder | CLI driven directly |
+| Clips on another disk | Need internal-disk space for the copy and the render | No extra copy |
+| Clips on the internal APFS disk | The copy is a clone; only the render takes space | No extra copy |
+| `export_project`, `export_stmap`, `.gyroflow` project inputs | Not available | Available |
+
+The App Store sandbox only lets the CLI access
+`~/Library/Application Support/Gyroflow/`. Each job clones its clips into
+`gyroflow-mcp/job-*` there, renders, moves the result out and removes the job
+folder. Metadata exports stay in `gyroflow-mcp/metadata/` (about 22 MB for a
+90-second O4 Pro clip) and are not removed automatically.
+
+To use the DMG build: `brew install --cask gyroflow`. Its app bundle uses the same
+location as the App Store one, so remove the App Store app first.
+
+## Usage for agents
 
 Renders are **asynchronous**: `render_start` returns a `job_id` immediately;
 poll `render_status` (or `render_list`) until the job reaches a terminal state,
 then read the output path from the result. Run `gyroflow_doctor` first - if
-Gyroflow is missing or sandboxed it returns actionable advice instead of
+Gyroflow is missing or unusable it returns actionable advice instead of
 failing mid-render.
 
 A typical agent flow: `gyroflow_doctor` → `probe_metadata` →
