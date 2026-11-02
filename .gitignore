@@ -10,3 +10,6 @@ docs/RUNBOOK-acceptance.md
 
 # macOS Finder metadata
 .DS_Store
+
+# Release archives
+/dist/

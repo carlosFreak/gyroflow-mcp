@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // validateConfig delegates to backend.ValidateGyroflowConfig - single source of truth.

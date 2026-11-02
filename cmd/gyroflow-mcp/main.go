@@ -3,19 +3,23 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
-	"github.com/Errorist79/gyroflow-mcp/internal/backend/cli"
-	"github.com/Errorist79/gyroflow-mcp/internal/gyroflow"
-	"github.com/Errorist79/gyroflow-mcp/internal/jobengine"
-	"github.com/Errorist79/gyroflow-mcp/internal/lens"
-	"github.com/Errorist79/gyroflow-mcp/internal/mcpsurface"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend/cli"
+	"github.com/carlosFreak/gyroflow-mcp/internal/gyroflow"
+	"github.com/carlosFreak/gyroflow-mcp/internal/jobengine"
+	"github.com/carlosFreak/gyroflow-mcp/internal/lens"
+	"github.com/carlosFreak/gyroflow-mcp/internal/mcpsurface"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// version is set at release time by scripts/release.sh.
+var version = "dev"
 
 // lensSyncTimeout bounds the startup lens-DB download so an unreachable or
 // hanging GitHub can never block server startup. On timeout we degrade to a
@@ -66,7 +70,7 @@ func newBackend(ctx context.Context, bin string) backend.Backend {
 
 func buildServer() *mcp.Server {
 	srv := mcp.NewServer(
-		&mcp.Implementation{Name: "gyroflow-mcp", Version: "0.1.0"},
+		&mcp.Implementation{Name: "gyroflow-mcp", Version: version},
 		&mcp.ServerOptions{Instructions: mcpsurface.ServerInstructions()},
 	)
 
@@ -112,6 +116,10 @@ func buildServer() *mcp.Server {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
 	srv := buildServer()
 	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatalf("gyroflow-mcp server failed: %v", err)

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // progressRe matches the raw --stdout-progress lines emitted by gyroflow.

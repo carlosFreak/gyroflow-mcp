@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
-	"github.com/Errorist79/gyroflow-mcp/internal/jobengine"
-	"github.com/Errorist79/gyroflow-mcp/internal/lens"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/jobengine"
+	"github.com/carlosFreak/gyroflow-mcp/internal/lens"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

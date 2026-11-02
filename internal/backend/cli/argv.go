@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // stabilizeArgv builds the gyroflow argument vector. Flags are taken from

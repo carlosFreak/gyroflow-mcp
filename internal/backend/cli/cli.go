@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // maxTailBytes bounds how much gyroflow output we retain. A long render can

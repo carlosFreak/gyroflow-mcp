@@ -24,10 +24,19 @@ that has never been opened.
 
 ## Quick start
 
-You need [Go 1.25+](https://go.dev/dl/) to build (`brew install go`) and Gyroflow
-from the [Mac App Store](https://apps.apple.com/app/gyroflow/id6447994244) or
+You need Gyroflow from the
+[Mac App Store](https://apps.apple.com/app/gyroflow/id6447994244) or
 [its download page](https://gyroflow.xyz/download). This server detects Gyroflow;
-it does not install it.
+it does not install it. On macOS:
+
+```sh
+brew install carlosFreak/tap/gyroflow-mcp
+claude mcp add --scope user gyroflow-mcp -- "$(brew --prefix)/bin/gyroflow-mcp"
+```
+
+Restart Claude Code, then ask it to stabilize a clip.
+
+To build from source instead, with [Go 1.25+](https://go.dev/dl/):
 
 ```sh
 git clone https://github.com/carlosFreak/gyroflow-mcp
@@ -36,8 +45,7 @@ go build -o bin/gyroflow-mcp ./cmd/gyroflow-mcp
 claude mcp add --scope user gyroflow-mcp -- "$PWD/bin/gyroflow-mcp"
 ```
 
-Restart Claude Code, then ask it to stabilize a clip. The registration points at
-the built binary, so keep this folder where it is.
+The registration points at the built binary, so keep that folder where it is.
 
 For Claude Desktop, Cursor and other stdio MCP clients, add this to the client's
 `mcpServers` config (Claude Desktop:
@@ -48,7 +56,7 @@ For Claude Desktop, Cursor and other stdio MCP clients, add this to the client's
 {
   "mcpServers": {
     "gyroflow-mcp": {
-      "command": "/ABSOLUTE/PATH/TO/bin/gyroflow-mcp",
+      "command": "/ABSOLUTE/PATH/TO/gyroflow-mcp",
       "args": []
     }
   }

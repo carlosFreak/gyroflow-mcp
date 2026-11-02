@@ -1,4 +1,4 @@
-module github.com/Errorist79/gyroflow-mcp
+module github.com/carlosFreak/gyroflow-mcp
 
 go 1.25.3
 

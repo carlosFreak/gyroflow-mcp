@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
-	"github.com/Errorist79/gyroflow-mcp/internal/gyroflow"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/gyroflow"
 )
 
 // resStderr safely extracts StderrTail from a possibly-nil Result.

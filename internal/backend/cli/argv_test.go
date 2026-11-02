@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 func TestStabilizeArgvMinimal(t *testing.T) {

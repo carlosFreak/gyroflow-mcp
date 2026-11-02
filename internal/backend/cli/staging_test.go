@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/backend"
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // fakeGyroflow writes a script that records its args and renders like the real

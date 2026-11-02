@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/jobengine"
+	"github.com/carlosFreak/gyroflow-mcp/internal/jobengine"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

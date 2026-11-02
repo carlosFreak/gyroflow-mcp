@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Errorist79/gyroflow-mcp/internal/lens"
+	"github.com/carlosFreak/gyroflow-mcp/internal/lens"
 )
 
 func TestBuildServerHasName(t *testing.T) {
