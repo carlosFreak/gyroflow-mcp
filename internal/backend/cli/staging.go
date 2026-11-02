@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,10 +184,11 @@ func moveOutputs(ctx context.Context, outDir string, req backend.StabilizeReques
 		found := false
 		for _, e := range entries {
 			name := e.Name()
-			if e.IsDir() || strings.HasSuffix(name, ".tmp") || !strings.HasPrefix(name, want) {
+			delivered := decodeOutputName(name)
+			if e.IsDir() || strings.HasSuffix(name, ".tmp") || !strings.HasPrefix(delivered, want) {
 				continue
 			}
-			dst := filepath.Join(dir, name)
+			dst := filepath.Join(dir, delivered)
 			if err := moveFile(ctx, filepath.Join(outDir, name), dst, req.Overwrite); err != nil {
 				return paths, err
 			}
@@ -198,6 +200,15 @@ func moveOutputs(ctx context.Context, outDir string, req backend.StabilizeReques
 		}
 	}
 	return paths, nil
+}
+
+// decodeOutputName restores the real name of an output: gyroflow percent-encodes
+// it on disk, so "my clip.mp4" renders to "my%20clip_stabilized.mp4".
+func decodeOutputName(name string) string {
+	if decoded, err := url.PathUnescape(name); err == nil {
+		return decoded
+	}
+	return name
 }
 
 func (s *StagingBackend) ProbeMetadata(ctx context.Context, input string, opts backend.ProbeOptions) (*backend.MetadataResult, error) {

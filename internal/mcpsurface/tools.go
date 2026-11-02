@@ -156,6 +156,10 @@ func waitForJob(ctx context.Context, e *jobengine.Engine, id string, timeout tim
 		case <-ctx.Done():
 			return j, ctx.Err()
 		case <-deadline.C:
+			// j may be up to a poll old; report the state at the deadline.
+			if latest, ok := e.Status(id); ok {
+				return latest, nil
+			}
 			return j, nil
 		case <-tick.C:
 		}

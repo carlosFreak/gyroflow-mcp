@@ -133,8 +133,8 @@ NOT needed for this flow.
    single field from the gyroflow://capabilities ranges and retry once -
    do NOT shell out to ffprobe/jq/grep or hand-edit a preset file.
 
-8. render_status - poll render_status with the job_id until state is terminal:
-   "completed", "failed", or "cancelled".
+8. render_wait - call render_wait with the job_id, and again while state is
+   "running", until state is terminal: "completed", "failed", or "cancelled".
    - completed: report the output path(s) from the status "outputs". If
      "outputs" is absent/empty, the stabilized file is the input path's
      directory + the input file name with the configured suffix (default

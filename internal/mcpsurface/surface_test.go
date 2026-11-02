@@ -657,7 +657,7 @@ func TestStabilizeFootagePrompt(t *testing.T) {
 	}
 	text := body.String()
 	// Assert the deterministic ordered flow appears, in order.
-	flow := []string{"gyroflow_doctor", "probe_metadata", "find_lens_profile", "render_start", "render_status"}
+	flow := []string{"gyroflow_doctor", "probe_metadata", "find_lens_profile", "render_start", "render_wait"}
 	last := 0
 	for _, tool := range flow {
 		i := strings.Index(text[last:], tool)

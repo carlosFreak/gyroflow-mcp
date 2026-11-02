@@ -14,7 +14,7 @@ import (
 )
 
 // fakeGyroflow writes a script that records its args and renders like the real
-// CLI: "<output_folder><stem><suffix>.mp4", printing "Rendering failed" (exit 0)
+// CLI: "<output_folder><percent-encoded stem><suffix>.mp4", printing "Rendering failed" (exit 0)
 // when the input is not inside allowedDir, as the sandbox would.
 func fakeGyroflow(t *testing.T, dir, allowedDir string) (bin, argsLog string) {
 	t.Helper()
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-base=$(basename "$input"); base="${base%.*}"
+base=$(basename "$input"); base="${base%.*}"; base=$(printf '%s' "$base" | sed 's/ /%20/g')
 printf rendered > "$folder$base$suffix.mp4"
 `
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
@@ -91,6 +91,25 @@ func TestStagingMovesOutputNextToInputAndCleansUp(t *testing.T) {
 	}
 	if d := jobDirs(t, s.root); len(d) != 0 {
 		t.Fatalf("job dirs left behind: %v", d)
+	}
+}
+
+func TestStagingDeliversOutputOfNameWithSpaces(t *testing.T) {
+	s, clip, _ := newStagingFixture(t)
+	spaced := filepath.Join(filepath.Dir(clip), "my clip.MP4")
+	if err := os.Rename(clip, spaced); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Stabilize(context.Background(), backend.StabilizeRequest{Inputs: []string{spaced}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(spaced), "my clip_stabilized.mp4")
+	if len(res.OutputPaths) != 1 || res.OutputPaths[0] != want {
+		t.Fatalf("OutputPaths = %v, want %s", res.OutputPaths, want)
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatal(err)
 	}
 }
 
