@@ -4,6 +4,8 @@ package mcpsurface
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 	"github.com/carlosFreak/gyroflow-mcp/internal/jobengine"
@@ -34,10 +36,10 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"Gyroflow must be installed; the sandboxed App Store build works through a temporary work folder " +
 	"(no export_project or export_stmap). If any tool reports it is unusable or " +
 	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice. " +
-	"Renders are ASYNC: render_start returns a job_id immediately - then poll render_status " +
-	"(optionally pass a progressToken for progress notifications); use render_cancel and " +
-	"render_list to manage jobs. Typical flow: gyroflow_doctor → probe_metadata → " +
-	"find_lens_profile → render_start → render_status."
+	"Renders are ASYNC: render_start returns a job_id immediately - then call render_wait, which " +
+	"streams a live progress bar to clients that send a progressToken, or poll render_status. " +
+	"Show the user the progress_bar field verbatim. Use render_cancel and render_list to manage " +
+	"jobs. Typical flow: gyroflow_doctor → probe_metadata → find_lens_profile → render_start → render_wait."
 
 // ServerInstructions returns the operational guidance for ServerOptions.Instructions.
 func ServerInstructions() string { return serverInstructions }
@@ -79,26 +81,84 @@ type idArgs struct {
 }
 
 type statusOut struct {
-	State   string   `json:"state"`
-	Percent float64  `json:"percent"`
-	Frame   int      `json:"frame"`
-	Total   int      `json:"total"`
-	ETA     float64  `json:"eta"`
-	Stage   string   `json:"stage"`
-	Outputs []string `json:"outputs,omitempty"`
-	Error   string   `json:"error,omitempty"`
+	State   string  `json:"state"`
+	Percent float64 `json:"percent"`
+	Frame   int     `json:"frame"`
+	Total   int     `json:"total"`
+	Stage   string  `json:"stage"`
+	// ProgressBar is ready-to-show text, one line per bar; clients relay it verbatim.
+	ProgressBar string    `json:"progress_bar"`
+	Files       []fileOut `json:"files,omitempty"`
+	Outputs     []string  `json:"outputs,omitempty"`
+	Error       string    `json:"error,omitempty"`
+}
+
+// fileOut is the progress of one input of a render job.
+type fileOut struct {
+	Name    string  `json:"name"`
+	State   string  `json:"state"`
+	Percent float64 `json:"percent"`
+	Frame   int     `json:"frame"`
+	Total   int     `json:"total"`
 }
 
 func jobToStatus(j jobengine.Job) statusOut {
+	var files []fileOut
+	for _, f := range j.Progress.Files {
+		files = append(files, fileOut{Name: f.Name, State: string(f.State), Percent: f.Percent, Frame: f.Frame, Total: f.Total})
+	}
 	return statusOut{
-		State:   string(j.State),
-		Percent: j.Progress.Percent,
-		Frame:   j.Progress.Frame,
-		Total:   j.Progress.Total,
-		ETA:     j.Progress.ETA,
-		Stage:   j.Progress.Stage,
-		Outputs: j.OutputPaths,
-		Error:   j.Err,
+		State:       string(j.State),
+		Percent:     j.Progress.Percent,
+		Frame:       j.Progress.Frame,
+		Total:       j.Progress.Total,
+		Stage:       j.Progress.Stage,
+		ProgressBar: progressBar(j),
+		Files:       files,
+		Outputs:     j.OutputPaths,
+		Error:       j.Err,
+	}
+}
+
+type waitArgs struct {
+	JobID    string `json:"job_id"              jsonschema:"the render job id"`
+	TimeoutS int    `json:"timeout_s,omitempty" jsonschema:"seconds to wait before returning the current status (default 55, max 600); the render keeps running either way"`
+}
+
+const (
+	defaultWaitTimeout = 55 * time.Second
+	maxWaitTimeout     = 600 * time.Second
+	waitPollInterval   = time.Second
+)
+
+// waitForJob blocks until the job is terminal, timeout elapses or ctx is done,
+// calling notify whenever the progress bar changes. It never affects the render.
+func waitForJob(ctx context.Context, e *jobengine.Engine, id string, timeout time.Duration, notify func(jobengine.Job)) (jobengine.Job, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(waitPollInterval)
+	defer tick.Stop()
+
+	lastBar := ""
+	for {
+		j, ok := e.Status(id)
+		if !ok {
+			return jobengine.Job{}, fmt.Errorf("unknown job_id: %s", id)
+		}
+		if bar := progressBar(j); bar != lastBar {
+			lastBar = bar
+			notify(j)
+		}
+		if j.State == jobengine.StateCompleted || j.State == jobengine.StateFailed || j.State == jobengine.StateCancelled {
+			return j, nil
+		}
+		select {
+		case <-ctx.Done():
+			return j, ctx.Err()
+		case <-deadline.C:
+			return j, nil
+		case <-tick.C:
+		}
 	}
 }
 
@@ -109,33 +169,12 @@ func jobToStatus(j jobengine.Job) statusOut {
 func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens.Index) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "render_start",
-		Description: "Start a video stabilization render. Returns a job_id immediately; poll render_status.",
+		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait or render_status.",
 		Annotations: destructiveAnn("Start render"),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
-		// Optional progress notifications: if the client supplied a progressToken,
-		// emit NotifyProgress for each backend progress update.
-		// API pins (go doc, v1.6.0):
-		//   req.Params.GetProgressToken() → any (nil if absent)
-		//   req.Session → *mcp.ServerSession; ServerSession.NotifyProgress(ctx, *ProgressNotificationParams)
-		//   ProgressNotificationParams: ProgressToken any, Progress float64, Total float64, Message string
-		var onProgress backend.ProgressFunc
-		if tok := req.Params.GetProgressToken(); tok != nil && req.Session != nil {
-			sess := req.Session
-			onProgress = func(p backend.Progress) {
-				// Use Background context: fires from the async job goroutine after
-				// the request handler has returned. Errors are intentionally ignored
-				// so notification failures cannot affect the render.
-				if sess == nil {
-					return
-				}
-				_ = sess.NotifyProgress(context.Background(), &mcp.ProgressNotificationParams{
-					ProgressToken: tok,
-					Progress:      p.Percent,
-					Total:         100,
-					Message:       p.Stage,
-				})
-			}
-		}
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
+		// No progress notifications here: this request ends as soon as the job is
+		// queued, and MCP only allows progress for active requests. render_wait
+		// stays open during the render and streams it under its own token.
 		if a.Config != nil {
 			if err := backend.ValidateGyroflowConfig(a.Config); err != nil {
 				return nil, startOut{}, fmt.Errorf("invalid config: %w", err)
@@ -153,7 +192,7 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 			NoGPUDecoding:    a.NoGPUDecoding,
 			OutParams:        a.OutParams,
 			SyncParams:       a.SyncParams,
-		}, onProgress)
+		}, nil)
 		return nil, startOut{JobID: id}, nil
 	})
 
@@ -165,6 +204,40 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 		j, ok := e.Status(a.JobID)
 		if !ok {
 			return nil, statusOut{}, fmt.Errorf("unknown job_id: %s", a.JobID)
+		}
+		return nil, jobToStatus(j), nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "render_wait",
+		Description: "Wait for a render job, streaming a live progress bar as MCP progress notifications when the " +
+			"client sends a progressToken. Returns the status when the job ends or timeout_s elapses; call again if " +
+			"state is still running. Cancelling this call does not cancel the render.",
+		Annotations: readOnlyAnn("Wait for render"),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, a waitArgs) (*mcp.CallToolResult, statusOut, error) {
+		timeout := defaultWaitTimeout
+		if a.TimeoutS > 0 {
+			timeout = min(time.Duration(a.TimeoutS)*time.Second, maxWaitTimeout)
+		}
+		notify := func(jobengine.Job) {}
+		if tok := req.Params.GetProgressToken(); tok != nil && req.Session != nil {
+			notify = func(j jobengine.Job) {
+				percent := j.Progress.Percent
+				if j.State == jobengine.StateCompleted {
+					percent = 100
+				}
+				// Errors are ignored: a lost notification must not end the wait.
+				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+					ProgressToken: tok,
+					Progress:      percent,
+					Total:         100,
+					Message:       strings.ReplaceAll(progressBar(j), "\n", " | "),
+				})
+			}
+		}
+		j, err := waitForJob(ctx, e, a.JobID, timeout, notify)
+		if err != nil {
+			return nil, statusOut{}, err
 		}
 		return nil, jobToStatus(j), nil
 	})

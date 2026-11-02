@@ -99,11 +99,15 @@ case 4a), and `config` from step 5 (omit entirely if no fields were needed).
 It returns a **`job_id` immediately** - the render is NOT done yet. This is the
 ONLY `render_start` call. Never assume completion from this return.
 
-### 7. Poll - `render_status`
+### 7. Wait - `render_wait`
 
-Poll `render_status` with the `job_id` until a terminal state
-(`completed`/`failed`/`cancelled`). Report progress between polls. Use
-`render_list` for all jobs, `render_cancel` to stop one.
+Call `render_wait` with the `job_id` until a terminal state
+(`completed`/`failed`/`cancelled`); call it again if it returns `running`.
+Clients that send a `progressToken` get a live bar while it waits. Show the
+user the `progress_bar` field verbatim after each call. `render_status` gives
+the same fields without waiting. Use `render_list` for all jobs, `render_cancel`
+to stop one. `frame` and `total` are gyroflow's packet counts: on clips with
+pre-roll they exceed the frames in the output, and no video is missing.
 
 On `completed`, read the output path from the status `outputs` and give it to
 the user. If `outputs` is absent/empty, the stabilized file is the input

@@ -132,7 +132,7 @@ location as the App Store one, so remove the App Store app first.
 ## Usage for agents
 
 Renders are **asynchronous**: `render_start` returns a `job_id` immediately;
-poll `render_status` (or `render_list`) until the job reaches a terminal state,
+call `render_wait` (or poll `render_status`) until the job reaches a terminal state,
 then read the output path from the result. Run `gyroflow_doctor` first - if
 Gyroflow is missing or unusable it returns actionable advice instead of
 failing mid-render.
@@ -150,8 +150,9 @@ them appropriately.
 
 | Tool | Hint | Description |
 |------|------|-------------|
-| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; poll `render_status`. Accepts a typed `config` (see below). |
-| `render_status` | read-only | Progress and state for a render job. |
+| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below). |
+| `render_status` | read-only | Progress and state for a render job, including a ready-to-show `progress_bar` (with several inputs, one bar for the current file and one for the total) and per-file `files`. |
+| `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). |
 | `render_cancel` | destructive | Cancel a running render job. |
 | `render_list` | read-only | List all render jobs and their states. |
 | `gyroflow_doctor` | read-only | Inspect the detected gyroflow binary: path, version, sandbox status, advice. |

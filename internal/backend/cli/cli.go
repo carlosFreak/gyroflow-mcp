@@ -98,15 +98,17 @@ func (b *CLIBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest
 	var nonProgressOut tailBuffer
 	var outputPaths []string
 	seenOut := map[string]bool{}
+	tracker := newProgressTracker()
 	sc := bufio.NewScanner(stdout)
 	for sc.Scan() {
 		line := sc.Text()
 		if p, ok := parseProgressLine(line); ok {
 			if onProgress != nil {
-				onProgress(p)
+				onProgress(tracker.sample(p))
 			}
 			continue
 		}
+		tracker.queueLine(line)
 		// gyroflow prints the RESOLVED output path on its Queue: entry line
 		// (one per input). This is authoritative - it already reflects the
 		// -t suffix / out_params / container, so no naming guess is needed.
@@ -157,6 +159,9 @@ func (b *CLIBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest
 		outputPaths = fallbackOutputPaths(req)
 	}
 	res.OutputPaths = outputPaths
+	if onProgress != nil && len(tracker.files) > 0 {
+		onProgress(tracker.finish())
+	}
 	return res, nil
 }
 

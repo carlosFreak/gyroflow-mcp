@@ -71,7 +71,7 @@ func TestCLIBackendStabilizeRelativePath(t *testing.T) {
 		},
 		func(p backend.Progress) {
 			progressCount++
-			t.Logf("progress: frame=%d/%d (%.1f%%) ETA=%.1fs", p.Frame, p.Total, p.Percent, p.ETA)
+			t.Logf("progress: frame=%d/%d (%.1f%%)", p.Frame, p.Total, p.Percent)
 		},
 	)
 	// We expect either success or a gyroflow render error - but NOT a
@@ -123,7 +123,7 @@ func TestStabilizeRealBinary(t *testing.T) {
 			Suffix:    "_stab",
 		},
 		func(p backend.Progress) {
-			t.Logf("progress frame=%d/%d %.1f%% ETA=%.1fs", p.Frame, p.Total, p.Percent, p.ETA)
+			t.Logf("progress frame=%d/%d %.1f%%", p.Frame, p.Total, p.Percent)
 		},
 	)
 	if err != nil {
@@ -209,7 +209,7 @@ func TestStabilizeCompoundConfigRealBinary(t *testing.T) {
 			Config:    cfg,
 		},
 		func(p backend.Progress) {
-			t.Logf("progress frame=%d/%d %.1f%% ETA=%.1fs", p.Frame, p.Total, p.Percent, p.ETA)
+			t.Logf("progress frame=%d/%d %.1f%%", p.Frame, p.Total, p.Percent)
 		},
 	)
 	if err != nil {

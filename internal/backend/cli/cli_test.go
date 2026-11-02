@@ -121,8 +121,11 @@ func TestCLIBackendStabilizeStreamsProgress(t *testing.T) {
 	if res.ExitCode != 0 {
 		t.Fatalf("exit=%d", res.ExitCode)
 	}
-	if len(seen) != 2 || seen[1].Percent != 100.0 {
+	if len(seen) != 3 || seen[0].Percent != 50.0 || seen[1].Percent != 100.0 {
 		t.Fatalf("progress not streamed: %+v", seen)
+	}
+	if last := seen[2]; last.Percent != 100.0 || last.Files[0].State != backend.FileDone {
+		t.Fatalf("final progress should mark the file done: %+v", last)
 	}
 }
 

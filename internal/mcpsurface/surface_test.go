@@ -14,14 +14,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// progressBackend is like okBackend but also fires a progress callback with ETA
+// progressBackend is like okBackend but also fires a progress callback
 // so that the MCP progress notification path is exercised.
 type progressBackend struct{}
 
 func (progressBackend) Stabilize(ctx context.Context, r backend.StabilizeRequest, p backend.ProgressFunc) (*backend.Result, error) {
 	if p != nil {
-		p(backend.Progress{Percent: 50, Frame: 1, Total: 2, ETA: 1.0, Stage: "render"})
-		p(backend.Progress{Percent: 100, Frame: 2, Total: 2, ETA: 0.0, Stage: "render"})
+		p(backend.Progress{Percent: 50, Frame: 1, Total: 2, Stage: "render"})
+		p(backend.Progress{Percent: 100, Frame: 2, Total: 2, Stage: "render"})
 	}
 	return &backend.Result{OutputPaths: []string{"out.mp4"}, ExitCode: 0}, nil
 }
@@ -107,9 +107,9 @@ func TestRenderStartThenStatus(t *testing.T) {
 		}
 		st := sr.StructuredContent.(map[string]any)
 		if st["state"] == "completed" {
-			// Verify eta field is present in render_status output (spec §MCP Surface).
-			if _, hasETA := st["eta"]; !hasETA {
-				t.Fatalf("render_status missing 'eta' field in completed status: %+v", st)
+			// gyroflow's ETA is unreliable, so it must not reach clients.
+			if _, hasETA := st["eta"]; hasETA {
+				t.Fatalf("render_status must not expose 'eta': %+v", st)
 			}
 			return
 		}
@@ -118,16 +118,11 @@ func TestRenderStartThenStatus(t *testing.T) {
 	t.Fatal("job never completed via render_status")
 }
 
-// TestRenderStartEmitsProgressNotification verifies that render_start sends
-// MCP progress notifications to the client when a progressToken is present in
-// the request meta.
-//
-// API pins (go doc verified, v1.6.0):
-//   - ClientOptions.ProgressNotificationHandler: func(context.Context, *mcp.ProgressNotificationClientRequest)
-//   - CallToolParams.Meta: mcp.Meta{"progressToken": <token>}
-//   - Server side: req.Params.GetProgressToken() → any; req.Session → *mcp.ServerSession
-//   - ServerSession.NotifyProgress(ctx, *mcp.ProgressNotificationParams)
-func TestRenderStartEmitsProgressNotification(t *testing.T) {
+// TestRenderStartSendsNoProgressAfterResponding verifies that render_start
+// ignores its progressToken: the request ends once the job is queued, and MCP
+// only allows progress for active requests. The job must still report progress
+// through render_status.
+func TestRenderStartSendsNoProgressAfterResponding(t *testing.T) {
 	ctx := context.Background()
 	srv := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
 	eng := jobengine.New(progressBackend{}, 1)
@@ -154,18 +149,41 @@ func TestRenderStartEmitsProgressNotification(t *testing.T) {
 	}
 	defer cs.Close()
 
-	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{
 		Name:      "render_start",
 		Arguments: map[string]any{"inputs": []string{"c.mp4"}},
 		Meta:      mcp.Meta{"progressToken": "p1"},
-	}); err != nil {
-		t.Fatal(err)
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("render_start failed: %v %+v", err, res)
+	}
+	jobID, _ := res.StructuredContent.(map[string]any)["job_id"].(string)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		sr, err := cs.CallTool(ctx, &mcp.CallToolParams{
+			Name: "render_status", Arguments: map[string]any{"job_id": jobID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := sr.StructuredContent.(map[string]any)
+		if st["state"] == "completed" {
+			if st["frame"] != float64(2) || st["total"] != float64(2) {
+				t.Fatalf("job progress not recorded: %+v", st)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job never completed")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	select {
 	case <-got:
-	case <-time.After(2 * time.Second):
-		t.Fatal("no progress notification received within 2s")
+		t.Fatal("render_start sent a progress notification after responding")
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -533,6 +551,7 @@ func TestToolAnnotations(t *testing.T) {
 	// name → wantReadOnly (true) | wantDestructive (false=readOnly path)
 	wantReadOnly := map[string]bool{
 		"render_status":     true,
+		"render_wait":       true,
 		"render_list":       true,
 		"gyroflow_doctor":   true,
 		"probe_metadata":    true,

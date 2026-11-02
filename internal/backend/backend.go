@@ -48,13 +48,38 @@ type ExportRequest struct {
 type ProgressFunc func(Progress)
 
 // Progress holds a single progress sample emitted by gyroflow --stdout-progress.
+//
+// Percent, Frame and Total cover the whole job, across all of its files.
+// Frame and Total are gyroflow's own counts of container packets, not of output
+// frames: a clip with pre-roll packets reports more than it renders (seen:
+// 1828/1828 reported, 1799 frames in both the source's display and the output).
 type Progress struct {
 	Percent float64
 	Frame   int
 	Total   int
-	ETA     float64 // seconds remaining, from gyroflow --stdout-progress ETA field
 	Stage   string
+	// Files holds one entry per input, in render order. Empty until gyroflow
+	// reports its queue.
+	Files []FileProgress
 }
+
+// FileProgress is the progress of one input of a render job.
+type FileProgress struct {
+	Name    string
+	Percent float64
+	Frame   int
+	Total   int
+	State   FileState
+}
+
+// FileState describes where one input of a render job is in the queue.
+type FileState string
+
+const (
+	FilePending   FileState = "pending"
+	FileRendering FileState = "rendering"
+	FileDone      FileState = "done"
+)
 
 // Result is the terminal outcome of a backend operation.
 type Result struct {
