@@ -13,7 +13,7 @@ those for ready-made recipes; use this skill to drive the tools directly.
 ## Hard boundary
 
 This server only **detects** an installed Gyroflow binary; it never installs
-one. If Gyroflow is not present (or is the sandboxed macOS App Store build),
+one. If Gyroflow is not present or the doctor reports it is not usable,
 renders cannot work - surface the doctor's advice to the user instead of
 retrying. Do not fabricate stabilized output.
 
@@ -25,10 +25,10 @@ Call `gyroflow_doctor` before anything else. Inspect the result:
 
 - **Not found** → tell the user to install Gyroflow from
   <https://gyroflow.xyz/download> and stop.
-- **Sandboxed / App Store build (macOS)** → the CLI cannot read video files.
-  Relay the doctor's advice verbatim: install the non-sandboxed DMG from
-  <https://gyroflow.xyz/download> or `brew install --cask gyroflow`, then
-  re-run `gyroflow_doctor`. Do not attempt a render until it reports usable.
+- **Not usable** → relay the doctor's advice verbatim and do not attempt a
+  render until it reports usable.
+- **Sandboxed and usable (macOS App Store build)** → renders work through a
+  temporary work folder. `export_project` and `export_stmap` need the DMG build.
 - **Usable** → proceed.
 
 > **Use only the MCP tools.** Do NOT shell out to `ffprobe`, `jq`, `grep`, or

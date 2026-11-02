@@ -3,6 +3,7 @@ package gyroflow
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -16,8 +17,25 @@ type SandboxResult struct {
 	Sandboxed bool
 	// AppStore is true when the binary is signed by Apple Mac OS Application Signing.
 	AppStore bool
+	// StagingAvailable is true when the sandbox still grants read/write on
+	// Gyroflow's Application Support folder, which staging relies on.
+	StagingAvailable bool
 	// Advice is a non-empty actionable message when Sandboxed is true.
 	Advice string
+}
+
+// stagingEntitlement is the home-relative path exception in the App Store build.
+const stagingEntitlement = "/Library/Application Support/Gyroflow/"
+
+const stagingAdvice = "App Store build detected: clips are copied to Gyroflow's Application Support folder, rendered there and moved back. Clips on another disk need free space on the internal disk for the copy and the render. export_project and export_stmap need the DMG build (`brew install --cask gyroflow`)."
+
+// StagingRoot returns the work folder used with the sandboxed build.
+func StagingRoot() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, "Library", "Application Support", "Gyroflow", "gyroflow-mcp"), nil
 }
 
 // classifyEntitlements returns true when the codesign output contains the
@@ -76,9 +94,13 @@ func InspectSandbox(ctx context.Context, binPath string) (SandboxResult, error) 
 	s := string(out)
 	sandboxed := classifyEntitlements(s)
 	appStore := classifyAuthority(s)
+	staging := sandboxed && strings.Contains(s, stagingEntitlement)
 	var advice string
-	if sandboxed {
+	switch {
+	case staging:
+		advice = stagingAdvice
+	case sandboxed:
 		advice = sandboxAdvice
 	}
-	return SandboxResult{Sandboxed: sandboxed, AppStore: appStore, Advice: advice}, nil
+	return SandboxResult{Sandboxed: sandboxed, AppStore: appStore, StagingAvailable: staging, Advice: advice}, nil
 }

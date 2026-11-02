@@ -143,6 +143,11 @@ func (b *CLIBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest
 	if waitErr != nil {
 		return res, adviseErr(combined, waitErr)
 	}
+	// gyroflow exits 0 even when a render fails, so the exit code alone would
+	// report a failed render as completed.
+	if strings.Contains(combined, "Rendering failed") {
+		return res, fmt.Errorf("gyroflow render failed: %s", tail(combined, 500))
+	}
 	// Primary: the paths gyroflow itself reported on the Queue line.
 	// Fallback (best-effort, only if no Queue line was parseable): derive
 	// dir(input)/stem(input)+suffix+ext(input). Default suffix "_stabilized"
@@ -234,10 +239,6 @@ func metadataRawPath(absInput string) string {
 }
 
 func (b *CLIBackend) ProbeMetadata(ctx context.Context, input string, opts backend.ProbeOptions) (*backend.MetadataResult, error) {
-	kind := opts.Kind
-	if kind == 0 {
-		kind = 2
-	}
 	absIn, err := absInput(input)
 	if err != nil {
 		return nil, err
@@ -246,7 +247,15 @@ func (b *CLIBackend) ProbeMetadata(ctx context.Context, input string, opts backe
 	// here and NOT removed on success. The caller gets the path in
 	// MetadataResult.RawPath and may read the full blob on demand; it is never
 	// inlined into the result or an MCP response.
-	rawPath := metadataRawPath(absIn)
+	return b.probeTo(ctx, absIn, metadataRawPath(absIn), opts)
+}
+
+// probeTo exports metadata for absIn to rawPath and summarizes it.
+func (b *CLIBackend) probeTo(ctx context.Context, absIn, rawPath string, opts backend.ProbeOptions) (*backend.MetadataResult, error) {
+	kind := opts.Kind
+	if kind == 0 {
+		kind = 2
+	}
 
 	cmd := exec.CommandContext(ctx, b.bin, probeMetadataArgv(absIn, kind, rawPath, opts.Fields)...)
 	var combined tailBuffer
@@ -296,7 +305,18 @@ func tail(s string, n int) string {
 // pure (no exec) so it is unit-testable; Stabilize calls it before running.
 func prepareStabilize(req backend.StabilizeRequest) (backend.StabilizeRequest, error) {
 	if req.Config == nil {
-		return req, nil
+		if req.PresetPath == "" {
+			return req, nil
+		}
+		base, err := os.ReadFile(req.PresetPath)
+		if err != nil {
+			return req, fmt.Errorf("reading preset_path %s: %w", req.PresetPath, err)
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(base, &obj); err != nil {
+			return req, fmt.Errorf("preset_path %s is not valid JSON: %w", req.PresetPath, err)
+		}
+		return inlinePreset(req, obj)
 	}
 	if err := validateConfig(req.Config); err != nil {
 		return req, err
@@ -322,8 +342,13 @@ func prepareStabilize(req backend.StabilizeRequest) (backend.StabilizeRequest, e
 			return req, err
 		}
 	}
-	req.PresetJSON = string(b)
-	req.PresetPath = "" // consumed into PresetJSON
+	var merged map[string]any
+	if err := json.Unmarshal(b, &merged); err != nil {
+		return req, fmt.Errorf("internal: preset is not valid JSON (bug): %w", err)
+	}
+	if req, err = inlinePreset(req, merged); err != nil {
+		return req, err
+	}
 	if o := req.Config.Output; o != nil {
 		if req.OutParams == nil {
 			req.OutParams = backend.OutParams{}
@@ -336,6 +361,23 @@ func prepareStabilize(req backend.StabilizeRequest) (backend.StabilizeRequest, e
 		}
 		routeSync(s, req.SyncParams)
 	}
+	return req, nil
+}
+
+// inlinePreset stores preset as the inline --preset value, without the location
+// fields a GUI-exported preset may carry: gyroflow would prefer them over -p and
+// send every render to the folder the preset was exported from.
+func inlinePreset(req backend.StabilizeRequest, preset map[string]any) (backend.StabilizeRequest, error) {
+	if out, ok := preset["output"].(map[string]any); ok {
+		delete(out, "output_folder")
+		delete(out, "output_filename")
+	}
+	b, err := json.Marshal(preset)
+	if err != nil {
+		return req, err
+	}
+	req.PresetJSON = string(b)
+	req.PresetPath = "" // consumed into PresetJSON
 	return req, nil
 }
 

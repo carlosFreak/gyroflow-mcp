@@ -60,11 +60,10 @@ NOT needed for this flow.
 
 1. gyroflow_doctor - verify the Gyroflow CLI. Result fields: found, usable,
    sandboxed, app_store, path, version, advice.
-   - If found=false OR usable=false OR sandboxed=true: relay the doctor's
-     advice verbatim and STOP. Do NOT attempt a render - it will fail. (The
-     macOS App Store / sandboxed build cannot read files headless; the fix is
-     the non-sandboxed DMG build, e.g. brew install --cask gyroflow.)
-   - Only continue when usable=true.
+   - If found=false OR usable=false: relay the doctor's advice verbatim and
+     STOP. Do NOT attempt a render - it will fail.
+   - Only continue when usable=true. sandboxed=true with usable=true is fine:
+     the App Store build renders through a temporary work folder.
 
 2. probe_metadata - call probe_metadata with input=%q. It returns
    {summary:{...}, raw_path}. Read ONLY summary:
@@ -177,7 +176,7 @@ func RegisterPrompts(s *mcp.Server) {
 
 Follow this flow:
 
-1. gyroflow_doctor - run ONCE up front. If found=false or usable=false/sandboxed=true, surface the advice and STOP for the whole batch (every file would fail the same way).
+1. gyroflow_doctor - run ONCE up front. If found=false or usable=false, surface the advice and STOP for the whole batch (every file would fail the same way).
 
 2. Enumerate the inputs:
    - If %q is a folder, list the video files in it (skip non-video files and existing *_stabilized outputs).
@@ -212,7 +211,7 @@ Follow this flow:
 Input: %s
 Reported symptom: %s
 
-First, run gyroflow_doctor. If usable=false / sandboxed=true, that is almost always the root cause: the installed Gyroflow is the sandboxed App Store build which cannot read files headless. Relay the doctor advice (install the DMG build, e.g. `+"`brew install --cask gyroflow`"+`) and stop here - nothing else will work until that is fixed. The error signature "Unable to read the video file" maps to this same cause (also confirm the path is absolute and the file exists).
+First, run gyroflow_doctor. If usable=false, that is almost always the root cause. Relay the doctor advice and stop here - nothing else will work until that is fixed. The error signature "Unable to read the video file" maps to this same cause (also confirm the path is absolute and the file exists).
 
 Otherwise triage by symptom:
 

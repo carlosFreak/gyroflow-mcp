@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Errorist79/gyroflow-mcp/internal/backend"
 	"github.com/Errorist79/gyroflow-mcp/internal/backend/cli"
 	"github.com/Errorist79/gyroflow-mcp/internal/gyroflow"
 	"github.com/Errorist79/gyroflow-mcp/internal/jobengine"
@@ -52,6 +53,17 @@ func loadLensIndex(ctx context.Context) *lens.Index {
 // loader. Production (main()) uses the real loadLensIndex by default.
 var loadLensIndexFn = loadLensIndex
 
+// newBackend staged-renders with the sandboxed App Store build and drives the
+// binary directly otherwise.
+func newBackend(ctx context.Context, bin string) backend.Backend {
+	if sr, err := gyroflow.InspectSandbox(ctx, bin); err == nil && sr.StagingAvailable {
+		if root, err := gyroflow.StagingRoot(); err == nil {
+			return cli.NewStaging(bin, root)
+		}
+	}
+	return cli.New(bin)
+}
+
 func buildServer() *mcp.Server {
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "gyroflow-mcp", Version: "0.1.0"},
@@ -64,7 +76,7 @@ func buildServer() *mcp.Server {
 		return srv
 	}
 
-	be := cli.New(info.Path)
+	be := newBackend(context.Background(), info.Path)
 	eng := jobengine.New(be, 1)
 
 	doc := func(ctx context.Context) mcpsurface.DoctorResult {
@@ -83,7 +95,7 @@ func buildServer() *mcp.Server {
 		}
 		return mcpsurface.DoctorResult{
 			Found:     true,
-			Usable:    sandboxErr == nil && !sr.Sandboxed,
+			Usable:    sandboxErr == nil && (!sr.Sandboxed || sr.StagingAvailable),
 			Path:      inf.Path,
 			Version:   inf.Version,
 			Sandboxed: sr.Sandboxed,

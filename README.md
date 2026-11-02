@@ -21,16 +21,19 @@ path to the binary).
   Gyroflow - it *detects* an already-installed binary at startup. Get it from
   <https://gyroflow.xyz/download>.
 
-> ### ⚠️ macOS: use the DMG / Homebrew build - NOT the Mac App Store build
+> ### macOS: App Store or DMG / Homebrew
 >
-> The Mac App Store build is sandboxed and its CLI cannot read your video
-> files, so every stabilization fails. Install the non-sandboxed build instead:
+> Both builds work, and `gyroflow_doctor` tells you which one was detected.
 >
-> - `brew install --cask gyroflow`, **or**
-> - the `Gyroflow-mac-universal.dmg` from <https://gyroflow.xyz/download>
+> - **DMG or Homebrew** (`brew install --cask gyroflow`): the CLI is driven directly.
+> - **Mac App Store**: the sandbox only lets its CLI access
+>   `~/Library/Application Support/Gyroflow/`, so each job clones the clips into
+>   a work folder there, renders, moves the result next to the original (or to
+>   `out_params.output_folder`) and removes the work folder.
 >
-> Run the `gyroflow_doctor` tool after setup - it detects a sandboxed build and
-> tells you how to fix it.
+> With the App Store build, clips on another disk need free space on the internal
+> disk for the copy and the render, and `export_project` and `export_stmap` are
+> not available because their output would reference a temporary copy.
 
 ## Installation
 

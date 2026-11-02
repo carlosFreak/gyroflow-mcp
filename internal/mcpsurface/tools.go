@@ -15,7 +15,8 @@ import (
 type DoctorResult struct {
 	// Found is true when a gyroflow binary was detected.
 	Found bool `json:"found"`
-	// Usable is true when Found=true and Sandboxed=false (binary can read files).
+	// Usable is true when Found=true and the binary can read files: not sandboxed,
+	// or sandboxed with staging available (see Advice).
 	Usable    bool   `json:"usable"`
 	Path      string `json:"path,omitempty"`
 	Version   string `json:"version,omitempty"`
@@ -30,9 +31,9 @@ type DoctorFunc func(ctx context.Context) DoctorResult
 // serverInstructions is the operational guidance advertised to MCP clients via
 // ServerOptions.Instructions. Kept tight and accurate to the actual tools.
 const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gyro-equipped video. " +
-	"Gyroflow must be installed AND non-sandboxed: if any tool reports it is unusable or " +
-	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice " +
-	"(install the DMG build, e.g. `brew install --cask gyroflow`). " +
+	"Gyroflow must be installed; the sandboxed App Store build works through a temporary work folder " +
+	"(no export_project or export_stmap). If any tool reports it is unusable or " +
+	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice. " +
 	"Renders are ASYNC: render_start returns a job_id immediately - then poll render_status " +
 	"(optionally pass a progressToken for progress notifications); use render_cancel and " +
 	"render_list to manage jobs. Typical flow: gyroflow_doctor → probe_metadata → " +

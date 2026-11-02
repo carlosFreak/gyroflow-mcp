@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"strconv"
+	"strings"
 
 	"github.com/Errorist79/gyroflow-mcp/internal/backend"
 )
@@ -32,6 +35,7 @@ type parsedMetadata struct {
 		TimestampMS float64   `json:"timestamp_ms"`
 		Gyro        []float64 `json:"gyro"`
 	} `json:"raw_imu"`
+	// Keyed by timestamp in microseconds.
 	Quaternions map[string]json.RawMessage `json:"quaternions"`
 	// LensProfile was null in the pinned real export. Decoded as RawMessage so
 	// a JSON-string value (if a future real sample carries one) can be surfaced
@@ -70,6 +74,15 @@ func parseMetadataSummary(raw []byte) (backend.MetadataSummary, error) {
 	if n := len(m.RawIMU); n > 0 {
 		durationS = m.RawIMU[n-1].TimestampMS / 1000.0
 	}
+	frameCount := len(m.Quaternions)
+
+	// Cameras like the DJI O4 Pro embed orientation quaternions instead of raw
+	// gyro samples: raw_imu is empty and quaternions run at IMU rate, not per frame.
+	if !hasGyro && len(m.Quaternions) > 0 {
+		hasGyro = true
+		durationS = quaternionSpanS(m.Quaternions)
+		frameCount = int(math.Round(durationS * float64(ci.FPS) / 1000.0))
+	}
 
 	return backend.MetadataSummary{
 		Camera: backend.CameraInfo{
@@ -84,9 +97,23 @@ func parseMetadataSummary(raw []byte) (backend.MetadataSummary, error) {
 		Height:          ci.VideoHeight,
 		FPS:             float64(ci.FPS) / 1000.0,
 		DurationS:       durationS,
-		FrameCount:      len(m.Quaternions),
+		FrameCount:      frameCount,
 		DetectedProfile: detectedProfile(m.LensProfile),
 	}, nil
+}
+
+// quaternionSpanS returns the time covered by the quaternion timestamps.
+func quaternionSpanS(q map[string]json.RawMessage) float64 {
+	first, last := math.Inf(1), math.Inf(-1)
+	for k := range q {
+		if ts, err := strconv.ParseFloat(k, 64); err == nil {
+			first, last = math.Min(first, ts), math.Max(last, ts)
+		}
+	}
+	if first > last {
+		return 0
+	}
+	return (last - first) / 1e6
 }
 
 // detectedProfile resolves .lens_profile to a string. The pinned real export
@@ -100,6 +127,13 @@ func detectedProfile(rm json.RawMessage) string {
 	var s string
 	if err := json.Unmarshal(trimmed, &s); err == nil {
 		return s
+	}
+	var profile struct {
+		Brand string `json:"camera_brand"`
+		Model string `json:"camera_model"`
+	}
+	if err := json.Unmarshal(trimmed, &profile); err == nil && profile.Brand+profile.Model != "" {
+		return strings.TrimSpace(profile.Brand + " " + profile.Model)
 	}
 	// Present but neither null nor a JSON string (e.g. an object): unpinned
 	// shape - emit "" but log so a degraded probe is visible (mirrors the
