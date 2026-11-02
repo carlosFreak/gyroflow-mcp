@@ -135,6 +135,8 @@ NOT needed for this flow.
 
 8. render_wait - call render_wait with the job_id, and again while state is
    "running", until state is terminal: "completed", "failed", or "cancelled".
+   Use the default timeout_s. Every time it returns "running", write the user
+   one short line with the percent of the current file and of the total.
    - completed: report the output path(s) from the status "outputs". If
      "outputs" is absent/empty, the stabilized file is the input path's
      directory + the input file name with the configured suffix (default

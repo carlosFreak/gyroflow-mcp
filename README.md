@@ -152,7 +152,7 @@ them appropriately.
 |------|------|-------------|
 | `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below). |
 | `render_status` | read-only | Progress and state for a render job, including a ready-to-show `progress_bar` (with several inputs, one bar for the current file and one for the total) and per-file `files`. |
-| `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). |
+| `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). Agents are told to report the percent to the user after each call. |
 | `render_cancel` | destructive | Cancel a running render job. |
 | `render_list` | read-only | List all render jobs and their states. |
 | `gyroflow_doctor` | read-only | Inspect the detected gyroflow binary: path, version, sandbox status, advice. |

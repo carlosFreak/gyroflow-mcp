@@ -38,7 +38,10 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice. " +
 	"Renders are ASYNC: render_start returns a job_id immediately - then call render_wait, which " +
 	"streams a live progress bar to clients that send a progressToken, or poll render_status. " +
-	"Show the user the progress_bar field verbatim. Use render_cancel and render_list to manage " +
+	"Every time render_wait returns with state running, write the user one short line with the " +
+	"percent of the current file and of the total, then call it again with the default timeout_s; " +
+	"do not wait silently, use a longer timeout or run the render in the background unless the user " +
+	"asks. Use render_cancel and render_list to manage " +
 	"jobs. Typical flow: gyroflow_doctor → probe_metadata → find_lens_profile → render_start → render_wait."
 
 // ServerInstructions returns the operational guidance for ServerOptions.Instructions.
@@ -173,7 +176,7 @@ func waitForJob(ctx context.Context, e *jobengine.Engine, id string, timeout tim
 func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens.Index) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "render_start",
-		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait or render_status.",
+		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait, reporting progress to the user after each call.",
 		Annotations: destructiveAnn("Start render"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
 		// No progress notifications here: this request ends as soon as the job is
@@ -215,8 +218,9 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "render_wait",
 		Description: "Wait for a render job, streaming a live progress bar as MCP progress notifications when the " +
-			"client sends a progressToken. Returns the status when the job ends or timeout_s elapses; call again if " +
-			"state is still running. Cancelling this call does not cancel the render.",
+			"client sends a progressToken. Returns the status when the job ends or timeout_s elapses. If state is still " +
+			"running, write the user one short line with the percent of the current file and of the total, then call " +
+			"again with the default timeout_s. Cancelling this call does not cancel the render.",
 		Annotations: readOnlyAnn("Wait for render"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, a waitArgs) (*mcp.CallToolResult, statusOut, error) {
 		timeout := defaultWaitTimeout

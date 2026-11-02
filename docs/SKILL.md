@@ -103,8 +103,9 @@ ONLY `render_start` call. Never assume completion from this return.
 
 Call `render_wait` with the `job_id` until a terminal state
 (`completed`/`failed`/`cancelled`); call it again if it returns `running`.
-Clients that send a `progressToken` get a live bar while it waits. Show the
-user the `progress_bar` field verbatim after each call. `render_status` gives
+Use the default `timeout_s`, and every time it returns `running`, write the
+user one short line with the percent of the current file and of the total, so
+clients that do not draw the live bar still show progress. `render_status` gives
 the same fields without waiting. Use `render_list` for all jobs, `render_cancel`
 to stop one. `frame` and `total` are gyroflow's packet counts: on clips with
 pre-roll they exceed the frames in the output, and no video is missing.
