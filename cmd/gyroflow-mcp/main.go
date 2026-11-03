@@ -14,6 +14,7 @@ import (
 	"github.com/carlosFreak/gyroflow-mcp/internal/gyroflow"
 	"github.com/carlosFreak/gyroflow-mcp/internal/jobengine"
 	"github.com/carlosFreak/gyroflow-mcp/internal/lens"
+	"github.com/carlosFreak/gyroflow-mcp/internal/lut"
 	"github.com/carlosFreak/gyroflow-mcp/internal/mcpsurface"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -80,7 +81,11 @@ func buildServer() *mcp.Server {
 		return srv
 	}
 
-	be := newBackend(context.Background(), info.Path)
+	ffmpeg := cli.FindFFmpeg()
+	if ffmpeg == "" {
+		log.Printf("ffmpeg not found - LUTs disabled (brew install ffmpeg)")
+	}
+	be := cli.NewLUT(newBackend(context.Background(), info.Path), ffmpeg)
 	eng := jobengine.New(be, 1)
 
 	doc := func(ctx context.Context) mcpsurface.DoctorResult {
@@ -108,7 +113,11 @@ func buildServer() *mcp.Server {
 		}
 	}
 	idx := loadLensIndexFn(context.Background())
-	mcpsurface.RegisterTools(srv, eng, doc, idx)
+	var opts []mcpsurface.ToolOption
+	if ffmpeg != "" {
+		opts = append(opts, mcpsurface.WithLUTs(&lut.Library{Dir: lut.DefaultDir()}))
+	}
+	mcpsurface.RegisterTools(srv, eng, doc, idx, opts...)
 	mcpsurface.RegisterResources(srv, idx, be)
 	mcpsurface.RegisterPrompts(srv)
 

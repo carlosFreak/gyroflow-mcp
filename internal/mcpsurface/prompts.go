@@ -135,6 +135,9 @@ NOT needed for this flow.
 7. If render_start returns an error mentioning a field/range, correct that
    single field from the gyroflow://capabilities ranges and retry once -
    do NOT shell out to ffprobe/jq/grep or hand-edit a preset file.
+   If it returns "render not started" with options to ask (render settings or
+   a color LUT), nothing rendered: ask the user exactly those options, then call
+   render_start again with their answer (config, or lut).
 
 8. render_wait - call render_wait with the job_id, and again while state is
    "running", until state is terminal: "completed", "failed", or "cancelled".

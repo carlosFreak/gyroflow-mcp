@@ -23,17 +23,21 @@ func progressBar(j jobengine.Job) string {
 	if j.State != jobengine.StateRunning {
 		return bar(j.Progress.Percent) + " · " + string(j.State)
 	}
+	stage := ""
+	if j.Progress.Stage == "lut" {
+		stage = " · applying LUT"
+	}
 	total := bar(j.Progress.Percent) + frames(j.Progress.Frame, j.Progress.Total)
 	if len(j.Progress.Files) < 2 {
-		return total
+		return total + stage
 	}
 	for i, f := range j.Progress.Files {
 		if f.State == backend.FileRendering {
-			return fmt.Sprintf("%s%s · file %d/%d: %s\n%s · total",
-				bar(f.Percent), frames(f.Frame, f.Total), i+1, len(j.Progress.Files), f.Name, total)
+			return fmt.Sprintf("%s%s · file %d/%d: %s%s\n%s · total",
+				bar(f.Percent), frames(f.Frame, f.Total), i+1, len(j.Progress.Files), f.Name, stage, total)
 		}
 	}
-	return total + " · total"
+	return total + " · total" + stage
 }
 
 // bar renders one bar and its percentage, clamping percent to 0-100.

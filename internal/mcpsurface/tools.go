@@ -41,6 +41,8 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"the user for smoothing, aspect ratio, crop, horizon lock and codec in a form. If your client cannot show " +
 	"MCP forms, ask the user those five settings yourself before render_start. If the user wants the " +
 	"defaults, pass config: {}. In a batch, reuse the config returned by the first render_start. " +
+	"render_start also asks whether to apply a color LUT (form, or an error listing the options for you to ask the user " +
+	"yourself); pass lut with a list_luts name, a .cube path, or none, and reuse it for the rest of a batch. " +
 	"Renders are ASYNC: render_start returns a job_id immediately - then call render_wait, which " +
 	"streams a live progress bar to clients that send a progressToken, or poll render_status. " +
 	"Every time render_wait returns with state running, write the user one short line with the " +
@@ -71,13 +73,14 @@ type startArgs struct {
 	PresetPath       string                  `json:"preset_path,omitempty"        jsonschema:"optional on-disk .gyroflow preset; the typed config overlays it"`
 	GyroFile         string                  `json:"gyro_file,omitempty"          jsonschema:"optional external gyro data file"`
 	Overwrite        bool                    `json:"overwrite,omitempty"          jsonschema:"overwrite existing output"`
-	Suffix           string                  `json:"suffix,omitempty"             jsonschema:"output filename suffix, e.g. _stabilized (gyroflow -t)"`
+	Suffix           string                  `json:"suffix,omitempty"             jsonschema:"output filename suffix (gyroflow -t), default _stabilized; the output aspect ratio is appended, e.g. _stabilized_1x1"`
 	Config           *backend.GyroflowConfig `json:"config,omitempty"             jsonschema:"full typed Gyroflow configuration - see the gyroflow://capabilities resource for every field's meaning, unit, range and enum values. Set only what the user asked for."`
 	ProcessingDevice *int                    `json:"processing_device,omitempty"  jsonschema:"GPU processing device index (gyroflow -b); omit for default"`
 	RenderingDevice  string                  `json:"rendering_device,omitempty"   jsonschema:"GPU vendor for rendering (gyroflow -r): nvidia, intel, amd, or 'apple m'"`
 	NoGPUDecoding    bool                    `json:"no_gpu_decoding,omitempty"    jsonschema:"disable GPU video decoding (gyroflow --no-gpu-decoding) - use only if decode fails"`
 	OutParams        map[string]any          `json:"out_params,omitempty"         jsonschema:"advanced: raw gyroflow -p output params (prefer config.output)"`
 	SyncParams       map[string]any          `json:"sync_params,omitempty"        jsonschema:"advanced: raw gyroflow -s sync params (prefer config.sync)"`
+	LUT              string                  `json:"lut,omitempty"                jsonschema:"color LUT applied after stabilizing: a name from list_luts, a path to a .cube (saved to the LUT folder), or none. Omit when the user has not said: the server then asks."`
 }
 
 type startOut struct {
@@ -85,6 +88,8 @@ type startOut struct {
 	// Config is set when the settings came from the user's form, so the agent
 	// can reuse it for the other files of a batch without asking again.
 	Config *backend.GyroflowConfig `json:"config,omitempty" jsonschema:"settings the user chose in the form; pass this as config to the remaining render_start calls of the same batch"`
+	// LUT is the user's LUT answer, to reuse for the rest of a batch.
+	LUT string `json:"lut,omitempty" jsonschema:"LUT the user chose; pass this as lut to the remaining render_start calls of the same batch"`
 }
 
 type idArgs struct {
@@ -235,7 +240,14 @@ func resolveAspectRatio(ctx context.Context, be backend.Backend, inputs []string
 // gyroflow_doctor, probe_metadata, export_project, and find_lens_profile to the
 // given server. idx may be nil when the lens database could not be loaded
 // (e.g. offline at startup); find_lens_profile then returns an actionable error.
-func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens.Index) {
+func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens.Index, opts ...ToolOption) {
+	var tc toolConfig
+	for _, o := range opts {
+		o(&tc)
+	}
+	if tc.luts != nil {
+		registerLUTTools(s, e.Backend(), tc.luts)
+	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "render_start",
 		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait, reporting progress to the user after each call. " +
@@ -263,20 +275,42 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 		if err != nil {
 			return nil, startOut{}, err
 		}
+		var lutPath string
+		askedLUT := a.LUT == "" && tc.luts != nil
+		if a.LUT != "" || tc.luts != nil {
+			var choices lutChoices
+			if tc.luts != nil {
+				if choices, err = buildLUTChoices(ctx, e.Backend(), tc.luts, a.Inputs); err != nil {
+					return nil, startOut{}, err
+				}
+			}
+			if askedLUT {
+				if a.LUT, err = askLUT(ctx, req.Session, choices); err != nil {
+					return nil, startOut{}, err
+				}
+			}
+			if lutPath, err = resolveLUT(tc.luts, a.LUT, choices.camera); err != nil {
+				return nil, startOut{}, err
+			}
+		}
 		id := e.StartStabilize(backend.StabilizeRequest{
 			Inputs:           a.Inputs,
 			PresetPath:       a.PresetPath,
 			GyroFile:         a.GyroFile,
 			Overwrite:        a.Overwrite,
-			Suffix:           a.Suffix,
+			Suffix:           withAspect(ctx, e.Backend(), a, resolved),
 			Config:           resolved,
 			ProcessingDevice: a.ProcessingDevice,
 			RenderingDevice:  a.RenderingDevice,
 			NoGPUDecoding:    a.NoGPUDecoding,
 			OutParams:        a.OutParams,
 			SyncParams:       a.SyncParams,
+			LUT:              lutPath,
 		}, nil)
 		out := startOut{JobID: id}
+		if askedLUT {
+			out.LUT = a.LUT
+		}
 		if asked {
 			out.Config = a.Config
 			if out.Config == nil {

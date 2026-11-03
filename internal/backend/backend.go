@@ -25,6 +25,7 @@ type StabilizeRequest struct {
 	RenderingDevice  string          // -r (e.g. "nvidia","intel","amd","apple m")
 	NoGPUDecoding    bool            // --no-gpu-decoding
 	Config           *GyroflowConfig // optional full typed config (serialized to inline --preset, -p, -s)
+	LUT              string          // optional validated .cube path, applied with ffmpeg after the render
 }
 
 // ExportKind selects which gyroflow project-export variant to perform.

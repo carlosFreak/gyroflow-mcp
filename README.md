@@ -95,6 +95,28 @@ request (*"stabilize this clip in 9:16 with the horizon locked"*); anything you
 leave out keeps Gyroflow's default. Say *"use the defaults"* to skip the
 questions entirely.
 
+## Color LUTs
+
+After stabilizing, the result can get a color LUT, such as DJI's free
+*D-Log M to Rec.709*. Before each render you are asked whether to apply one,
+even when you give a preset:
+
+- **The LUT for this clip's camera**, when your LUT folder has one.
+- **Another LUT** from your folder.
+- **Your own `.cube`**: give its path. It is checked, then saved to the folder
+  so it is offered next time.
+- **No LUT.**
+
+With no LUT saved yet for a DJI camera, the question links to its official
+download. Other brands get no link. A camera LUT is only for clips recorded in
+its log profile (D-Log M for DJI): on normal footage it oversaturates.
+
+LUTs live in `~/Movies/LUTs`, or the folder in `GYROFLOW_MCP_LUT_DIR`. They
+need ffmpeg (`brew install ffmpeg`); without it nothing is asked. Gyroflow first
+writes a near-lossless intermediate next to the result (about 3 GB a minute in
+4K60), then ffmpeg applies the LUT and encodes the final file once, in the
+codec and bitrate you chose. LUTs work with H.265/HEVC, H.264 and ProRes.
+
 ## Use your own settings
 
 Export your Gyroflow settings once and reuse them on every clip:
@@ -131,8 +153,11 @@ from; export a separate preset for other modes.
 
 ## Where the results go
 
-Each result is saved next to the original as `<name>_stabilized.<ext>`, or with
-the suffix and output folder you ask for. Originals are not modified, and an
+Each result is saved next to the original as `<name>_stabilized_<ratio>.<ext>`,
+e.g. `DJI_0005_D_stabilized_1x1.mp4` or `_16x9`, `_9x16`, `_4x3` (the source's
+own ratio when the size is unchanged). A suffix you ask for gets the ratio too
+(`_test` → `_test_1x1`), unless it already ends in it. Clips of different ratios
+rendered together keep the plain suffix. You can also choose the output folder. Originals are not modified, and an
 existing output is only replaced if you ask to overwrite it.
 
 ## App Store or DMG / Homebrew
@@ -186,7 +211,8 @@ them appropriately.
 
 | Tool | Hint | Description |
 |------|------|-------------|
-| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below); without one, asks the user for the main settings in a form. |
+| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below); without one, asks the user for the main settings in a form. `lut` takes a `list_luts` name, a `.cube` path or `none`; omitted, the user is asked. |
+| `list_luts` | read-only | List the `.cube` LUTs in the LUT folder; with `input`, also the one suggested for that clip's camera and, for DJI, its download link. |
 | `render_status` | read-only | Progress and state for a render job, including a ready-to-show `progress_bar` (with several inputs, one bar for the current file and one for the total) and per-file `files`. |
 | `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). Agents are told to report the percent to the user after each call. |
 | `render_cancel` | destructive | Cancel a running render job. |
