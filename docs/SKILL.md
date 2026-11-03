@@ -77,12 +77,20 @@ Translate the user's natural-language request into a typed `config` object for
 range, and enum values. Set ONLY what the user asked for; leave everything else
 unset (Gyroflow defaults apply).
 
+If the user gave **no settings at all**, omit `config`: the server asks them
+smoothing, aspect ratio, crop, horizon lock and codec in an MCP form. If the
+form is not answered (clients such as the Claude desktop app never show it),
+`render_start` returns an error listing every option with its `config` - ask
+the user those questions in chat, merge the answers into one `config` and call
+`render_start` again. If the user wants the defaults, pass `config: {}`.
+
 Examples of the intent→field mapping you must perform yourself (never ask the
 user to write JSON):
 
 | User says | Config field(s) |
 |-----------|----------------|
 | "lock the horizon" | `config.horizon_lock.amount = 100` |
+| "vertical / 9:16", "square", "16:9" | `config.output.aspect_ratio = "9:16"` / `"1:1"` / `"16:9"` (the server sizes it from the clip) |
 | "smoother / less shaky" | `config.smoothing.method = "Default"`, `smoothness ≈ 0.7`; "very smooth" ≈ 0.9 |
 | "crop as little as possible" | `config.zoom.adaptive_zoom_window = 0` (no zoom) or `-1` (static crop); explain border trade-off |
 | "fix jello / rolling shutter" | `config.rolling_shutter.frame_readout_time` (ms from camera spec or probe output) |
@@ -97,7 +105,8 @@ If `render_start` returns a range/field error, correct that one field from
 Call `render_start` with `inputs=[path]`, `preset_path` per step 4 (omit for
 case 4a), and `config` from step 5 (omit entirely if no fields were needed).
 It returns a **`job_id` immediately** - the render is NOT done yet. This is the
-ONLY `render_start` call. Never assume completion from this return.
+ONLY `render_start` call (apart from the retry after asking the settings in
+chat, step 5). Never assume completion from this return.
 
 ### 7. Wait - `render_wait`
 

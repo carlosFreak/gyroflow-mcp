@@ -72,6 +72,27 @@ Mini, Air and Mavic usually don't. Ask your agent to check a clip, which uses
 
 For best results, record with in-camera stabilization (RockSteady, EIS) turned off.
 
+## Settings questions
+
+If you ask without any settings (*"stabilize this clip"*), you are asked five
+questions before anything renders:
+
+| Question | Options (first is the default) |
+|----------|--------------------------------|
+| Smoothing | Medium, Light, Strong (gimbal-like), Locked camera |
+| Aspect ratio | Same as source, 16:9, 9:16, 1:1, 4:5 |
+| Crop | Dynamic zoom, Static zoom, No zoom (visible borders) |
+| Horizon lock | Off, Partial, Full |
+| Codec | Same as source, H.264, H.265/HEVC, ProRes |
+
+Clients that support MCP forms (elicitation) show them as a form. Others, such
+as the Claude desktop app, have the agent ask them in chat.
+When stabilizing several clips you answer once for all of them.
+
+To skip the questions, put the settings in your request (*"stabilize this clip
+in 9:16 with the horizon locked"*); anything you leave out keeps Gyroflow's
+default. Say *"use the defaults"* to skip them entirely.
+
 ## Use your own settings
 
 Export your Gyroflow settings once and reuse them on every clip:
@@ -98,6 +119,9 @@ avoid upscaling:
 | 9:16 | 1620x2880 |
 
 The crop is centered, so 9:16 loses the most from the sides.
+
+Without a preset, asking for a ratio (*"in 1:1"*) works out the same sizes from
+each clip's resolution.
 
 Any output folder or filename stored in a preset is ignored. A preset can also
 contain `frame_readout_time`, which suits the recording mode it was exported
@@ -143,16 +167,15 @@ A typical agent flow: `gyroflow_doctor` → `probe_metadata` →
 request like *"stabilize this video, lock the horizon, trim the first 3
 seconds"* maps to a single `render_start` call with a typed config.
 
-If the request gives no settings (*"stabilize this video"*), the agent calls
-`render_start` without `config` and the server asks the user, in an MCP form
-(elicitation), for the main settings: smoothing, aspect ratio (16:9, 9:16, 1:1,
-4:5), crop, horizon lock and codec. `render_start` returns the chosen `config` so a batch asks only once.
-If the form is not answered - declined, cancelled or empty (the Claude desktop
-app declines or cancels forms without showing them) - nothing renders: the
-error lists every option with its `config` so the agent asks the user in chat
-and calls again. Clients without form
-support are told to ask those five settings themselves; pass `config: {}` to
-skip the questions and use the defaults.
+If the request gives no settings, the agent calls `render_start` without
+`config` and the server asks the [settings questions](#settings-questions) in
+an MCP form (elicitation). `render_start` returns the chosen `config` so a
+batch asks only once. If the form is not answered - declined, cancelled or
+empty (the Claude desktop app declines or cancels forms without showing them) -
+nothing renders: the error lists every option with its `config` so the agent
+asks the user in chat and calls again. Clients without form support are told
+to ask those five settings themselves; pass `config: {}` to skip the questions
+and use the defaults.
 
 ## Tools
 
