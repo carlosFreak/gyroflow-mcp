@@ -4,6 +4,7 @@ package mcpsurface
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,7 +37,7 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"Gyroflow must be installed; the sandboxed App Store build works through a temporary work folder " +
 	"(no export_project or export_stmap). If any tool reports it is unusable or " +
 	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice. " +
-	"If the user gave no stabilization settings, call render_start without config: the server asks " +
+	"If the user gave no stabilization settings and no .gyroflow preset, call render_start without config: the server asks " +
 	"the user for smoothing, aspect ratio, crop, horizon lock and codec in a form. If your client cannot show " +
 	"MCP forms, ask the user those five settings yourself before render_start. If the user wants the " +
 	"defaults, pass config: {}. In a batch, reuse the config returned by the first render_start. " +
@@ -176,6 +177,25 @@ func waitForJob(ctx context.Context, e *jobengine.Engine, id string, timeout tim
 	}
 }
 
+// carriesSettings reports whether the render already has the user's settings:
+// a .gyroflow preset or project input. Lens profiles from find_lens_profile
+// are .json and do not count.
+func carriesSettings(a startArgs) bool {
+	if isGyroflowFile(a.PresetPath) {
+		return true
+	}
+	for _, in := range a.Inputs {
+		if isGyroflowFile(in) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGyroflowFile(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".gyroflow")
+}
+
 // resolveAspectRatio returns cfg with output.aspect_ratio turned into
 // output_width/height for the inputs' resolution. cfg itself is left as is,
 // so the ratio can be reused for a batch at another resolution.
@@ -219,7 +239,7 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "render_start",
 		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait, reporting progress to the user after each call. " +
-			"Omit config when the user gave no settings: the server then asks the user for the main settings in a form " +
+			"Omit config when the user gave no settings: unless a .gyroflow preset or project is passed, the server then asks the user for the main settings in a form " +
 			"(clients without form support must ask the user themselves first). Pass config: {} to use Gyroflow defaults without asking.",
 		Annotations: destructiveAnn("Start render"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
@@ -227,7 +247,7 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 		// queued, and MCP only allows progress for active requests. render_wait
 		// stays open during the render and streams it under its own token.
 		var asked bool
-		if a.Config == nil {
+		if a.Config == nil && !carriesSettings(a) {
 			cfg, ok, err := askRenderSettings(ctx, req.Session)
 			if err != nil {
 				return nil, startOut{}, err

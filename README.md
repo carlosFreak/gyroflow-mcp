@@ -89,9 +89,11 @@ Clients that support MCP forms (elicitation) show them as a form. Others, such
 as the Claude desktop app, have the agent ask them in chat.
 When stabilizing several clips you answer once for all of them.
 
-To skip the questions, put the settings in your request (*"stabilize this clip
-in 9:16 with the horizon locked"*); anything you leave out keeps Gyroflow's
-default. Say *"use the defaults"* to skip them entirely.
+Nothing is asked when you give a [`.gyroflow` preset](#use-your-own-settings),
+since it already holds your settings. You can also put the settings in your
+request (*"stabilize this clip in 9:16 with the horizon locked"*); anything you
+leave out keeps Gyroflow's default. Say *"use the defaults"* to skip the
+questions entirely.
 
 ## Use your own settings
 
@@ -168,7 +170,7 @@ request like *"stabilize this video, lock the horizon, trim the first 3
 seconds"* maps to a single `render_start` call with a typed config.
 
 If the request gives no settings, the agent calls `render_start` without
-`config` and the server asks the [settings questions](#settings-questions) in
+`config` and, unless `preset_path` or an input is a `.gyroflow` file, the server asks the [settings questions](#settings-questions) in
 an MCP form (elicitation). `render_start` returns the chosen `config` so a
 batch asks only once. If the form is not answered - declined, cancelled or
 empty (the Claude desktop app declines or cancels forms without showing them) -

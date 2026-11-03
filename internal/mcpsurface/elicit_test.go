@@ -131,6 +131,29 @@ func TestRenderStartSkipsFormWhenConfigGiven(t *testing.T) {
 	}
 }
 
+// A .gyroflow preset or project carries the user's settings; a .json lens
+// profile from find_lens_profile does not.
+func TestRenderStartSkipsFormWithGyroflowPreset(t *testing.T) {
+	cancel := func(*mcp.ElicitRequest) (*mcp.ElicitResult, error) { return &mcp.ElicitResult{Action: "cancel"}, nil }
+	for name, c := range map[string]struct {
+		args     map[string]any
+		wantForm bool
+	}{
+		"preset":        {map[string]any{"inputs": []string{"c.mp4"}, "preset_path": "/p/16-9.Gyroflow"}, false},
+		"project input": {map[string]any{"inputs": []string{"c.gyroflow"}}, false},
+		"lens profile":  {map[string]any{"inputs": []string{"c.mp4"}, "preset_path": "/lens/dji_o4p.json"}, true},
+		"no preset":     {map[string]any{"inputs": []string{"c.mp4"}}, true},
+	} {
+		res, _, forms := startWithForm(t, c.args, cancel)
+		if got := forms == 1; got != c.wantForm {
+			t.Errorf("%s: form shown = %v, want %v", name, got, c.wantForm)
+		}
+		if res.IsError == !c.wantForm {
+			t.Errorf("%s: unexpected result %+v", name, res)
+		}
+	}
+}
+
 func TestRenderStartWithoutFormSupportRendersDefaults(t *testing.T) {
 	res, req, _ := startWithForm(t, map[string]any{"inputs": []string{"c.mp4"}}, nil)
 	if res.IsError || req.Config != nil {

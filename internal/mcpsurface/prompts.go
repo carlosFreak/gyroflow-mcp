@@ -121,8 +121,8 @@ NOT needed for this flow.
                                     {param:"Fov", timestamp_ms:12000,
                                     value:<v>, easing:"EaseIn"}
    Set ONLY what the user asked for; leave everything else unset (Gyroflow
-   defaults apply). If the user gave no settings at all, omit config: the
-   server asks the user in a form (if your client cannot show MCP forms, ask
+   defaults apply). If the user gave no settings at all (a .gyroflow preset
+   counts as settings), omit config: the server asks the user in a form (if your client cannot show MCP forms, ask
    the user for smoothing, aspect ratio, crop, horizon lock and codec first). Make
    exactly ONE render_start call with this config.
 
