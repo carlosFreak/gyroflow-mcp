@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // cube returns a valid identity LUT of size 2.
@@ -99,5 +101,25 @@ func TestDownloadURL(t *testing.T) {
 	}
 	if u := DownloadURL("GoPro", "HERO12"); u != "" {
 		t.Fatalf("non-DJI = %q", u)
+	}
+}
+
+func TestLooks(t *testing.T) {
+	lib := &Library{Dir: filepath.Join(t.TempDir(), "LUTs")}
+	if len(lib.Looks()) != 0 {
+		t.Fatal("expected no looks")
+	}
+	if err := lib.SaveLook("Dron soleado", backend.ColorAdjust{Saturation: 0.2, Warmth: 0.3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.SaveLook("dron SOLEADO", backend.ColorAdjust{Saturation: 0.1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.SaveLook("bad", backend.ColorAdjust{Exposure: 9}); err == nil {
+		t.Fatal("out-of-range look saved")
+	}
+	c, err := lib.Look("Dron Soleado")
+	if err != nil || c.Saturation != 0.1 || c.Warmth != 0 || len(lib.Looks()) != 1 {
+		t.Fatalf("look = %+v, %v, looks %v", c, err, lib.Looks())
 	}
 }

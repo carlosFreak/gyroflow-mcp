@@ -2,7 +2,10 @@
 // and a future core backend share one interface.
 package backend
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // OutParams mirrors the gyroflow `-p` JSON (exact schema verified in
 // internal/schema; kept as a typed map here for backend independence).
@@ -26,6 +29,41 @@ type StabilizeRequest struct {
 	NoGPUDecoding    bool            // --no-gpu-decoding
 	Config           *GyroflowConfig // optional full typed config (serialized to inline --preset, -p, -s)
 	LUT              string          // optional validated .cube path, applied with ffmpeg after the render
+	Color            *ColorAdjust    // optional color adjustments, applied with ffmpeg after the LUT
+}
+
+// ColorAdjust is a set of color corrections applied after stabilizing, in
+// this order: exposure, warmth, saturation, contrast, vibrance, sharpness.
+// Zero leaves a setting unchanged.
+type ColorAdjust struct {
+	Exposure   float64 `json:"exposure,omitempty"   jsonschema:"brightness in stops, -2 to 2 (0.3 = a little brighter)"`
+	Contrast   float64 `json:"contrast,omitempty"   jsonschema:"-1 to 1 (0.2 = a little more contrast)"`
+	Saturation float64 `json:"saturation,omitempty" jsonschema:"-1 to 1; -1 is black and white (0.2 = a little more color)"`
+	Vibrance   float64 `json:"vibrance,omitempty"   jsonschema:"-1 to 1; boosts muted colors more than strong ones (0.3 = a little)"`
+	Warmth     float64 `json:"warmth,omitempty"     jsonschema:"-1 (cooler, bluer) to 1 (warmer, more orange)"`
+	Sharpness  float64 `json:"sharpness,omitempty"  jsonschema:"0 to 1 (0.3 = a little sharper)"`
+}
+
+// IsZero reports whether c changes nothing.
+func (c *ColorAdjust) IsZero() bool { return c == nil || *c == ColorAdjust{} }
+
+// Validate checks every setting is inside its range.
+func (c *ColorAdjust) Validate() error {
+	if c == nil {
+		return nil
+	}
+	for _, f := range []struct {
+		name      string
+		v, lo, hi float64
+	}{
+		{"exposure", c.Exposure, -2, 2}, {"contrast", c.Contrast, -1, 1}, {"saturation", c.Saturation, -1, 1},
+		{"vibrance", c.Vibrance, -1, 1}, {"warmth", c.Warmth, -1, 1}, {"sharpness", c.Sharpness, 0, 1},
+	} {
+		if f.v < f.lo || f.v > f.hi {
+			return fmt.Errorf("color.%s %v out of range [%v, %v]", f.name, f.v, f.lo, f.hi)
+		}
+	}
+	return nil
 }
 
 // ExportKind selects which gyroflow project-export variant to perform.

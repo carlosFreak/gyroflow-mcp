@@ -149,11 +149,14 @@ func (b *LUTBackend) ffprobe() string {
 }
 
 func (b *LUTBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest, onProgress backend.ProgressFunc) (*backend.Result, error) {
-	if req.LUT == "" {
+	if req.LUT == "" && req.Color.IsZero() {
 		return b.Backend.Stabilize(ctx, req, onProgress)
 	}
 	if b.ffmpeg == "" {
-		return nil, fmt.Errorf("applying a LUT needs ffmpeg: install it with `brew install ffmpeg`, or render without a LUT")
+		return nil, fmt.Errorf("a LUT or color adjustments need ffmpeg: install it with `brew install ffmpeg`, or render without them")
+	}
+	if err := req.Color.Validate(); err != nil {
+		return nil, err
 	}
 	if len(req.Inputs) == 0 {
 		return nil, fmt.Errorf("no inputs")
@@ -192,7 +195,7 @@ func (b *LUTBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest
 	}
 
 	inter := req
-	inter.LUT = ""
+	inter.LUT, inter.Color = "", nil
 	inter.Suffix = suffix + lutIntermediateSuffix
 	inter.Overwrite = true // its name is ours; the final file was checked above
 	cfg := backend.GyroflowConfig{}
@@ -221,7 +224,7 @@ func (b *LUTBackend) Stabilize(ctx context.Context, req backend.StabilizeRequest
 		}
 		return res, err
 	}
-	finals, err := b.applyLUT(ctx, req.LUT, res.OutputPaths, enc, onProgress)
+	finals, err := b.applyGrade(ctx, req.LUT, req.Color, res.OutputPaths, enc, onProgress)
 	removeAll(res.OutputPaths)
 	res.OutputPaths = finals
 	return res, err
@@ -233,18 +236,74 @@ func removeAll(paths []string) {
 	}
 }
 
-// applyLUT writes one final file per intermediate, reporting stage "lut".
-func (b *LUTBackend) applyLUT(ctx context.Context, cube string, inters []string, enc lutEncoder, onProgress backend.ProgressFunc) ([]string, error) {
-	// ffmpeg's filter syntax reserves ':' '\'' and '\\'; a copy under a plain
-	// name keeps the user's file name out of it.
+// gradeFilter is the ffmpeg -vf chain for a LUT and color adjustments. A
+// non-empty cube is copied into dir first: ffmpeg's filter syntax reserves
+// ':' '\” and '\\', and a plain name keeps the user's file name out of it.
+func gradeFilter(ctx context.Context, dir, cube string, c *backend.ColorAdjust) (string, error) {
+	var chain []string
+	if cube != "" {
+		safe := filepath.Join(dir, "lut.cube")
+		if err := copyFile(ctx, cube, safe); err != nil {
+			return "", err
+		}
+		chain = append(chain, "lut3d=file='"+safe+"'")
+	}
+	return strings.Join(append(chain, colorFilters(c)...), ","), nil
+}
+
+// colorFilters turns c into ffmpeg filters that keep high precision: ffmpeg's
+// eq filter would drop to 8 bits and band skies. Everything runs in 16-bit RGB
+// (exposure and saturation as one color matrix), then sharpening on 10-bit
+// YUV. 16-bit is about a third faster than float and loses nothing visible.
+func colorFilters(c *backend.ColorAdjust) []string {
+	if c.IsZero() {
+		return nil
+	}
+	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
+	var out []string
+	if c.Exposure != 0 || c.Warmth != 0 || c.Saturation != 0 || c.Contrast != 0 || c.Vibrance != 0 {
+		out = append(out, "format=gbrp16le")
+	}
+	if c.Warmth != 0 {
+		// 6500 K is neutral; lower is warmer. pl=1 keeps the brightness.
+		out = append(out, "colortemperature=temperature="+f(6500-2500*c.Warmth)+":pl=1")
+	}
+	if c.Exposure != 0 || c.Saturation != 0 {
+		// gain is the exposure in stops; Rec.709 luma weights keep the
+		// brightness while scaling the color.
+		g, s := math.Pow(2, c.Exposure), 1+c.Saturation
+		lr, lg, lb := 0.2126*(1-s), 0.7152*(1-s), 0.0722*(1-s)
+		out = append(out, fmt.Sprintf("colorchannelmixer=rr=%s:rg=%s:rb=%s:gr=%s:gg=%s:gb=%s:br=%s:bg=%s:bb=%s",
+			f(g*(lr+s)), f(g*lg), f(g*lb), f(g*lr), f(g*(lg+s)), f(g*lb), f(g*lr), f(g*lg), f(g*(lb+s))))
+	}
+	if c.Contrast != 0 {
+		k := 0.1 * c.Contrast // an S-curve: shadows down and highlights up
+		out = append(out, fmt.Sprintf("curves=all='0/0 0.25/%s 0.75/%s 1/1'", f(0.25-k), f(0.75+k)))
+	}
+	if c.Vibrance != 0 {
+		out = append(out, "vibrance=intensity="+f(c.Vibrance))
+	}
+	if c.Sharpness != 0 {
+		out = append(out, "format=yuv420p10le", "unsharp=5:5:"+f(1.5*c.Sharpness))
+	}
+	return out
+}
+
+// applyGrade writes one final file per intermediate, reporting stage "lut"
+// (or "color" when only color adjustments apply).
+func (b *LUTBackend) applyGrade(ctx context.Context, cube string, color *backend.ColorAdjust, inters []string, enc lutEncoder, onProgress backend.ProgressFunc) ([]string, error) {
 	tmp, err := os.MkdirTemp("", "gyroflow-lut-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
-	safe := filepath.Join(tmp, "lut.cube")
-	if err := copyFile(ctx, cube, safe); err != nil {
+	vf, err := gradeFilter(ctx, tmp, cube, color)
+	if err != nil {
 		return nil, err
+	}
+	stage := "lut"
+	if cube == "" {
+		stage = "color"
 	}
 
 	files := make([]backend.FileProgress, len(inters))
@@ -255,7 +314,7 @@ func (b *LUTBackend) applyLUT(ctx context.Context, cube string, inters []string,
 		if onProgress == nil {
 			return
 		}
-		p := backend.Progress{Stage: "lut", Files: append([]backend.FileProgress(nil), files...)}
+		p := backend.Progress{Stage: stage, Files: append([]backend.FileProgress(nil), files...)}
 		for _, f := range files {
 			p.Frame += f.Frame
 			p.Total += f.Total
@@ -272,9 +331,11 @@ func (b *LUTBackend) applyLUT(ctx context.Context, cube string, inters []string,
 		partial := strings.TrimSuffix(final, enc.ext) + ".partial" + enc.ext
 		files[i].State = backend.FileRendering
 		report()
-		args := append([]string{"-v", "error", "-nostats", "-progress", "pipe:1", "-y", "-i", inter,
+		// Hardware decoding frees the CPU for the filters; ffmpeg falls back
+		// to software when it is unavailable.
+		args := append([]string{"-v", "error", "-nostats", "-progress", "pipe:1", "-y", "-hwaccel", "videotoolbox", "-i", inter,
 			"-map", "0:v:0", "-map", "0:a?", "-map_metadata", "0",
-			"-vf", "lut3d=file='" + safe + "'"}, enc.args...)
+			"-vf", vf}, enc.args...)
 		args = append(args, "-c:a", "copy", partial)
 		cmd := exec.CommandContext(ctx, b.ffmpeg, args...)
 		stdout, err := cmd.StdoutPipe()
@@ -300,7 +361,7 @@ func (b *LUTBackend) applyLUT(ctx context.Context, cube string, inters []string,
 		}
 		if err := cmd.Wait(); err != nil {
 			os.Remove(partial)
-			return finals, fmt.Errorf("applying the LUT to %s failed: %v: %s", final, err, tail(stderr.String(), 500))
+			return finals, fmt.Errorf("applying the LUT/color to %s failed: %v: %s", final, err, tail(stderr.String(), 500))
 		}
 		if err := os.Rename(partial, final); err != nil {
 			os.Remove(partial)
@@ -329,4 +390,38 @@ func (b *LUTBackend) frameCount(ctx context.Context, path string) int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
 	return n
+}
+
+// Preview writes a before/after JPEG of one source frame at second at, with
+// the LUT and color applied to the right half, to out. The
+// frame is the unstabilized source: it shows color, not framing.
+func (b *LUTBackend) Preview(ctx context.Context, input string, at float64, cube string, color *backend.ColorAdjust, out string) error {
+	if b.ffmpeg == "" {
+		return fmt.Errorf("previews need ffmpeg: install it with `brew install ffmpeg`")
+	}
+	if err := color.Validate(); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp("", "gyroflow-preview-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	vf, err := gradeFilter(ctx, tmp, cube, color)
+	if err != nil {
+		return err
+	}
+	after := "[b]"
+	if vf != "" {
+		after = "[b]" + vf + ","
+	} else {
+		after = "[b]null,"
+	}
+	graph := "[0:v]scale=960:-2,format=yuv420p10le,split[a][b];" + after + "format=yuv420p[g];[a]format=yuv420p[o];[o][g]hstack"
+	cmd := exec.CommandContext(ctx, b.ffmpeg, "-v", "error", "-y", "-ss", strconv.FormatFloat(at, 'f', 2, 64), "-i", input,
+		"-frames:v", "1", "-filter_complex", graph, "-q:v", "3", out)
+	if o, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("preview failed: %v: %s", err, tail(string(o), 500))
+	}
+	return nil
 }

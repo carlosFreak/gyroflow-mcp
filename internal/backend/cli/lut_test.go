@@ -125,3 +125,47 @@ func TestLUTBackendRejectsUnsupportedCodec(t *testing.T) {
 		t.Fatal("expected an error")
 	}
 }
+
+func TestColorFiltersStayHighBitDepth(t *testing.T) {
+	if f := colorFilters(nil); f != nil {
+		t.Fatalf("nil adjust = %v", f)
+	}
+	all := strings.Join(colorFilters(&backend.ColorAdjust{Exposure: 0.3, Contrast: 0.2, Saturation: 0.2, Vibrance: 0.3, Warmth: 0.5, Sharpness: 0.3}), ",")
+	for _, want := range []string{"format=gbrp16le", "temperature=5250.0000:pl=1", "colorchannelmixer=rr=1.4250", "curves=", "vibrance=", "unsharp=5:5:0.4500"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in %s", want, all)
+		}
+	}
+	if strings.Contains(all, "eq=") || strings.Contains(all, "yuv420p,") || strings.Contains(all, "gbrpf32le") {
+		t.Errorf("chain drops to 8 bits: %s", all)
+	}
+}
+
+func TestColorOnlyRenderAndPreview(t *testing.T) {
+	ffmpeg, dir, clip, _ := lutFixture(t)
+	var got backend.StabilizeRequest
+	b := NewLUT(fakeRender{ffmpeg: ffmpeg, got: &got}, ffmpeg)
+	codec := "H.264/AVC"
+	var stage string
+	res, err := b.Stabilize(context.Background(), backend.StabilizeRequest{
+		Inputs: []string{clip}, Color: &backend.ColorAdjust{Saturation: 0.3, Warmth: 0.5, Contrast: 0.2, Sharpness: 0.2},
+		Config: &backend.GyroflowConfig{Output: &backend.OutputConfig{Codec: &codec}},
+	}, func(p backend.Progress) { stage = p.Stage })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.OutputPaths) != 1 || stage != "color" || got.Color != nil {
+		t.Fatalf("outputs %v stage %q inner color %v", res.OutputPaths, stage, got.Color)
+	}
+	if _, err := b.Stabilize(context.Background(), backend.StabilizeRequest{Inputs: []string{clip}, Color: &backend.ColorAdjust{Exposure: 5}}, nil); err == nil {
+		t.Fatal("out-of-range exposure accepted")
+	}
+
+	jpg := filepath.Join(dir, "preview.jpg")
+	if err := b.Preview(context.Background(), res.OutputPaths[0], 0.5, "", &backend.ColorAdjust{Saturation: -1}, jpg); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(jpg); err != nil || info.Size() == 0 {
+		t.Fatalf("preview not written: %v", err)
+	}
+}

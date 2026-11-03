@@ -24,8 +24,11 @@ func progressBar(j jobengine.Job) string {
 		return bar(j.Progress.Percent) + " · " + string(j.State)
 	}
 	stage := ""
-	if j.Progress.Stage == "lut" {
+	switch j.Progress.Stage {
+	case "lut":
 		stage = " · applying LUT"
+	case "color":
+		stage = " · applying color"
 	}
 	total := bar(j.Progress.Percent) + frames(j.Progress.Frame, j.Progress.Total)
 	if len(j.Progress.Files) < 2 {

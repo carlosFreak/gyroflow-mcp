@@ -62,6 +62,8 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"defaults, pass config: {}. In a batch, reuse the config returned by the first render_start. " +
 	"render_start also asks whether to apply a color LUT (form, or an error listing the options for you to ask the user " +
 	"yourself); pass lut with a list_luts name, a .cube path, or none, and reuse it for the rest of a batch. " +
+	"Only when the user asks for color changes (brightness, contrast, saturation, warmth, sharpness), pass color or a saved look, " +
+	"and first offer preview_color so they can see a before/after frame; save_look keeps a set of adjustments by name. " +
 	"Renders are ASYNC: render_start returns a job_id immediately - then call render_wait, which " +
 	"streams a live progress bar to clients that send a progressToken, or poll render_status. " +
 	"Every time render_wait returns with state running, write the user one short line with the " +
@@ -100,6 +102,8 @@ type startArgs struct {
 	OutParams        map[string]any          `json:"out_params,omitempty"         jsonschema:"advanced: raw gyroflow -p output params (prefer config.output)"`
 	SyncParams       map[string]any          `json:"sync_params,omitempty"        jsonschema:"advanced: raw gyroflow -s sync params (prefer config.sync)"`
 	LUT              string                  `json:"lut,omitempty"                jsonschema:"color LUT applied after stabilizing: a name from list_luts, a path to a .cube (saved to the LUT folder), or none. Omit when the user has not said: the server then asks."`
+	Color            *backend.ColorAdjust    `json:"color,omitempty"              jsonschema:"color adjustments applied after the LUT; only when the user asks for them. Zero or omitted fields change nothing."`
+	Look             string                  `json:"look,omitempty"               jsonschema:"name of a saved color look (list_luts); color fields override it"`
 }
 
 type startOut struct {
@@ -266,6 +270,7 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 	}
 	if tc.luts != nil {
 		registerLUTTools(s, e.Backend(), tc.luts)
+		registerColorTools(s, e.Backend(), tc.luts)
 	}
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "render_start",
@@ -312,6 +317,10 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 				return nil, startOut{}, err
 			}
 		}
+		color, err := resolveColor(tc.luts, a.Look, a.Color)
+		if err != nil {
+			return nil, startOut{}, err
+		}
 		id := e.StartStabilize(backend.StabilizeRequest{
 			Inputs:           a.Inputs,
 			PresetPath:       a.PresetPath,
@@ -325,6 +334,7 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 			OutParams:        a.OutParams,
 			SyncParams:       a.SyncParams,
 			LUT:              lutPath,
+			Color:            color,
 		}, nil)
 		out := startOut{JobID: id}
 		if askedLUT {

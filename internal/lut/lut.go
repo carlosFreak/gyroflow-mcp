@@ -1,5 +1,6 @@
-// Package lut manages the user's folder of .cube color LUTs: listing them,
-// validating new ones, adding the user's own and suggesting one per camera.
+// Package lut manages the user's folder of .cube color LUTs and saved color
+// looks: listing LUTs, validating new ones, adding the user's own and
+// suggesting one per camera.
 package lut
 
 import (
@@ -14,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/carlosFreak/gyroflow-mcp/internal/backend"
 )
 
 // DirEnv overrides the LUT folder.
@@ -279,4 +282,52 @@ func Validate(path string) error {
 		return fmt.Errorf("%s has %d table rows, LUT_3D_SIZE %d needs %d", path, rows, size, want)
 	}
 	return nil
+}
+
+// looksFile holds the saved color looks, keyed by name.
+const looksFile = "looks.json"
+
+// Looks returns the saved color looks by name.
+func (l *Library) Looks() map[string]backend.ColorAdjust {
+	m := map[string]backend.ColorAdjust{}
+	if b, err := os.ReadFile(filepath.Join(l.Dir, looksFile)); err == nil {
+		_ = json.Unmarshal(b, &m) // a damaged file only loses the looks
+	}
+	return m
+}
+
+// Look returns the saved look called name (case-insensitive).
+func (l *Library) Look(name string) (backend.ColorAdjust, error) {
+	for k, v := range l.Looks() {
+		if strings.EqualFold(k, name) {
+			return v, nil
+		}
+	}
+	return backend.ColorAdjust{}, fmt.Errorf("no look named %q; list_luts returns the saved looks", name)
+}
+
+// SaveLook stores c as name, replacing a look of the same name.
+func (l *Library) SaveLook(name string, c backend.ColorAdjust) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("a look needs a name")
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	m := l.Looks()
+	for k := range m {
+		if strings.EqualFold(k, name) {
+			delete(m, k)
+		}
+	}
+	m[name] = c
+	if err := os.MkdirAll(l.Dir, 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(l.Dir, looksFile), b, 0o644)
 }

@@ -202,13 +202,15 @@ type listLUTsOut struct {
 	Suggested   string      `json:"suggested,omitempty"`
 	Camera      string      `json:"camera,omitempty"`
 	DownloadURL string      `json:"download_url,omitempty"`
+	// Looks are the saved color looks, by name.
+	Looks map[string]backend.ColorAdjust `json:"looks,omitempty"`
 }
 
 func registerLUTTools(s *mcp.Server, be backend.Backend, lib *lut.Library) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "list_luts",
-		Description: "List the .cube LUTs in the user's LUT folder. With input, also the one suggested for that clip's camera " +
-			"and, for DJI cameras, where to download the official LUT.",
+		Description: "List the .cube LUTs in the user's LUT folder and the saved color looks. With input, also the LUT suggested " +
+			"for that clip's camera and, for DJI cameras, where to download the official LUT.",
 		Annotations: readOnlyAnn("List LUTs"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a listLUTsArgs) (*mcp.CallToolResult, listLUTsOut, error) {
 		var inputs []string
@@ -219,7 +221,7 @@ func registerLUTTools(s *mcp.Server, be backend.Backend, lib *lut.Library) {
 		if err != nil {
 			return nil, listLUTsOut{}, err
 		}
-		out := listLUTsOut{Folder: lib.Dir, LUTs: c.others, Camera: c.camera, DownloadURL: c.downloadURL}
+		out := listLUTsOut{Folder: lib.Dir, LUTs: c.others, Camera: c.camera, DownloadURL: c.downloadURL, Looks: lib.Looks()}
 		if c.suggested != nil {
 			out.Suggested = c.suggested.Name
 			out.LUTs = append([]lut.Entry{*c.suggested}, c.others...)

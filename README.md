@@ -117,6 +117,29 @@ writes a near-lossless intermediate next to the result (about 3 GB a minute in
 4K60), then ffmpeg applies the LUT and encodes the final file once, in the
 codec and bitrate you chose. LUTs work with H.265/HEVC, H.264 and ProRes.
 
+## Color adjustments
+
+Ask for them in plain words (*"a bit warmer and more saturated"*) and the agent
+turns them into these settings, applied after any LUT:
+
+| Setting | Range | Effect |
+|---------|-------|--------|
+| `exposure` | -2 to 2 stops | Brighter or darker |
+| `contrast` | -1 to 1 | Deeper shadows and brighter highlights |
+| `saturation` | -1 to 1 | More or less color; -1 is black and white |
+| `vibrance` | -1 to 1 | Boosts muted colors more than strong ones |
+| `warmth` | -1 to 1 | Cooler (bluer) or warmer (more orange) |
+| `sharpness` | 0 to 1 | Sharper detail |
+
+Nothing is asked: they only apply when you request them. `preview_color` shows
+one frame before and after, so you can tune them before a full render, and
+`save_look` keeps a set under a name (*"save this as Dron soleado"*) to reuse
+on later clips. Looks are stored with your LUTs, in `looks.json`.
+
+They need ffmpeg and run in the same pass as the LUT, in 16-bit color so skies
+do not band. Without a LUT they still add that pass: on a 76 s 4K clip,
+stabilizing plus color took about 4.5 minutes.
+
 ## Use your own settings
 
 Export your Gyroflow settings once and reuse them on every clip:
@@ -212,8 +235,10 @@ them appropriately.
 
 | Tool | Hint | Description |
 |------|------|-------------|
-| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below); without one, asks the user for the main settings in a form. `lut` takes a `list_luts` name, a `.cube` path or `none`; omitted, the user is asked. |
-| `list_luts` | read-only | List the `.cube` LUTs in the LUT folder; with `input`, also the one suggested for that clip's camera and, for DJI, its download link. |
+| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below); without one, asks the user for the main settings in a form. `lut` takes a `list_luts` name, a `.cube` path or `none`; omitted, the user is asked. `color` and `look` add [color adjustments](#color-adjustments). |
+| `list_luts` | read-only | List the `.cube` LUTs in the LUT folder and the saved color looks; with `input`, also the LUT suggested for that clip's camera and, for DJI, its download link. |
+| `preview_color` | read-only | One frame before (left) and after (right) a LUT and/or color adjustments, as an image and a JPEG path. |
+| `save_look` | destructive | Save color adjustments under a name, for `render_start` and `preview_color` `look`. |
 | `render_status` | read-only | Progress and state for a render job, including a ready-to-show `progress_bar` (with several inputs, one bar for the current file and one for the total) and per-file `files`. |
 | `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). Agents are told to report the percent to the user after each call. |
 | `render_cancel` | destructive | Cancel a running render job. |
