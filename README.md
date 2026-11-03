@@ -143,6 +143,17 @@ A typical agent flow: `gyroflow_doctor` → `probe_metadata` →
 request like *"stabilize this video, lock the horizon, trim the first 3
 seconds"* maps to a single `render_start` call with a typed config.
 
+If the request gives no settings (*"stabilize this video"*), the agent calls
+`render_start` without `config` and the server asks the user, in an MCP form
+(elicitation), for the main settings: smoothing, aspect ratio (16:9, 9:16, 1:1,
+4:5), crop, horizon lock and codec. `render_start` returns the chosen `config` so a batch asks only once.
+If the form is not answered - declined, cancelled or empty (the Claude desktop
+app declines or cancels forms without showing them) - nothing renders: the
+error lists every option with its `config` so the agent asks the user in chat
+and calls again. Clients without form
+support are told to ask those five settings themselves; pass `config: {}` to
+skip the questions and use the defaults.
+
 ## Tools
 
 All tools carry MCP annotations (read-only vs. destructive) so clients can gate
@@ -150,7 +161,7 @@ them appropriately.
 
 | Tool | Hint | Description |
 |------|------|-------------|
-| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below). |
+| `render_start` | destructive | Start a stabilization render. Returns a `job_id`; follow it with `render_wait` or `render_status`. Accepts a typed `config` (see below); without one, asks the user for the main settings in a form. |
 | `render_status` | read-only | Progress and state for a render job, including a ready-to-show `progress_bar` (with several inputs, one bar for the current file and one for the total) and per-file `files`. |
 | `render_wait` | read-only | Wait for a job, streaming a live progress bar as MCP progress notifications when the client sends a `progressToken`. Returns on completion or after `timeout_s` (default 55, max 600). Agents are told to report the percent to the user after each call. |
 | `render_cancel` | destructive | Cancel a running render job. |

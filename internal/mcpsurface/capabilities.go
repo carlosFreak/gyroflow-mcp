@@ -230,6 +230,11 @@ All non-nil fields are routed by routeOutput into the -p (output params) map.
   output.pixel_format            string   e.g. "yuv420p"       output pixel format
   output.output_width            int      px                   output frame width
   output.output_height           int      px                   output frame height
+  output.aspect_ratio            string   e.g. "16:9", "1:1"   output aspect ratio; render_start sets output_width/height
+                                                               to the largest frame of that ratio inside the source
+                                                               (3840x2880 at 16:9 → 3840x2160). Exclusive with
+                                                               output_width/output_height; inputs of one call must
+                                                               share a resolution.
   output.audio_codec             string   e.g. "aac"           audio codec
   output.interpolation           string   e.g. "Lanczos4"      pixel interpolation algorithm
   output.keyframe_distance       int      frames               IDR keyframe interval

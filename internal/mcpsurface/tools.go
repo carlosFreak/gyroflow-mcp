@@ -36,6 +36,10 @@ const serverInstructions = "gyroflow-mcp drives the Gyroflow CLI to stabilize gy
 	"Gyroflow must be installed; the sandboxed App Store build works through a temporary work folder " +
 	"(no export_project or export_stmap). If any tool reports it is unusable or " +
 	"\"Unable to read the video file\", call gyroflow_doctor and follow its advice. " +
+	"If the user gave no stabilization settings, call render_start without config: the server asks " +
+	"the user for smoothing, aspect ratio, crop, horizon lock and codec in a form. If your client cannot show " +
+	"MCP forms, ask the user those five settings yourself before render_start. If the user wants the " +
+	"defaults, pass config: {}. In a batch, reuse the config returned by the first render_start. " +
 	"Renders are ASYNC: render_start returns a job_id immediately - then call render_wait, which " +
 	"streams a live progress bar to clients that send a progressToken, or poll render_status. " +
 	"Every time render_wait returns with state running, write the user one short line with the " +
@@ -77,6 +81,9 @@ type startArgs struct {
 
 type startOut struct {
 	JobID string `json:"job_id"`
+	// Config is set when the settings came from the user's form, so the agent
+	// can reuse it for the other files of a batch without asking again.
+	Config *backend.GyroflowConfig `json:"config,omitempty" jsonschema:"settings the user chose in the form; pass this as config to the remaining render_start calls of the same batch"`
 }
 
 type idArgs struct {
@@ -169,23 +176,72 @@ func waitForJob(ctx context.Context, e *jobengine.Engine, id string, timeout tim
 	}
 }
 
+// resolveAspectRatio returns cfg with output.aspect_ratio turned into
+// output_width/height for the inputs' resolution. cfg itself is left as is,
+// so the ratio can be reused for a batch at another resolution.
+func resolveAspectRatio(ctx context.Context, be backend.Backend, inputs []string, cfg *backend.GyroflowConfig) (*backend.GyroflowConfig, error) {
+	if cfg == nil || cfg.Output == nil || cfg.Output.AspectRatio == nil {
+		return cfg, nil
+	}
+	aw, ah, err := backend.ParseAspectRatio(*cfg.Output.AspectRatio)
+	if err != nil {
+		return nil, err
+	}
+	srcW, srcH := 0, 0
+	for _, in := range inputs {
+		m, err := be.ProbeMetadata(ctx, in, backend.ProbeOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("output.aspect_ratio needs the source resolution: %w", err)
+		}
+		w, h := m.Summary.Width, m.Summary.Height
+		if w <= 0 || h <= 0 {
+			return nil, fmt.Errorf("output.aspect_ratio: no resolution found for %s; set output_width/output_height instead", in)
+		}
+		if srcW != 0 && (w != srcW || h != srcH) {
+			return nil, fmt.Errorf("output.aspect_ratio: inputs have different resolutions (%dx%d and %dx%d); call render_start once per resolution", srcW, srcH, w, h)
+		}
+		srcW, srcH = w, h
+	}
+	w, h := backend.FitAspectRatio(srcW, srcH, aw, ah)
+	out := *cfg.Output
+	out.AspectRatio = nil
+	out.OutputWidth, out.OutputHeight = &w, &h
+	resolved := *cfg
+	resolved.Output = &out
+	return &resolved, nil
+}
+
 // RegisterTools adds render_start, render_status, render_cancel, render_list,
 // gyroflow_doctor, probe_metadata, export_project, and find_lens_profile to the
 // given server. idx may be nil when the lens database could not be loaded
 // (e.g. offline at startup); find_lens_profile then returns an actionable error.
 func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens.Index) {
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "render_start",
-		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait, reporting progress to the user after each call.",
+		Name: "render_start",
+		Description: "Start a video stabilization render. Returns a job_id immediately; follow it with render_wait, reporting progress to the user after each call. " +
+			"Omit config when the user gave no settings: the server then asks the user for the main settings in a form " +
+			"(clients without form support must ask the user themselves first). Pass config: {} to use Gyroflow defaults without asking.",
 		Annotations: destructiveAnn("Start render"),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, a startArgs) (*mcp.CallToolResult, startOut, error) {
 		// No progress notifications here: this request ends as soon as the job is
 		// queued, and MCP only allows progress for active requests. render_wait
 		// stays open during the render and streams it under its own token.
+		var asked bool
+		if a.Config == nil {
+			cfg, ok, err := askRenderSettings(ctx, req.Session)
+			if err != nil {
+				return nil, startOut{}, err
+			}
+			a.Config, asked = cfg, ok
+		}
 		if a.Config != nil {
 			if err := backend.ValidateGyroflowConfig(a.Config); err != nil {
 				return nil, startOut{}, fmt.Errorf("invalid config: %w", err)
 			}
+		}
+		resolved, err := resolveAspectRatio(ctx, e.Backend(), a.Inputs, a.Config)
+		if err != nil {
+			return nil, startOut{}, err
 		}
 		id := e.StartStabilize(backend.StabilizeRequest{
 			Inputs:           a.Inputs,
@@ -193,14 +249,21 @@ func RegisterTools(s *mcp.Server, e *jobengine.Engine, doc DoctorFunc, idx *lens
 			GyroFile:         a.GyroFile,
 			Overwrite:        a.Overwrite,
 			Suffix:           a.Suffix,
-			Config:           a.Config,
+			Config:           resolved,
 			ProcessingDevice: a.ProcessingDevice,
 			RenderingDevice:  a.RenderingDevice,
 			NoGPUDecoding:    a.NoGPUDecoding,
 			OutParams:        a.OutParams,
 			SyncParams:       a.SyncParams,
 		}, nil)
-		return nil, startOut{JobID: id}, nil
+		out := startOut{JobID: id}
+		if asked {
+			out.Config = a.Config
+			if out.Config == nil {
+				out.Config = &backend.GyroflowConfig{}
+			}
+		}
+		return nil, out, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

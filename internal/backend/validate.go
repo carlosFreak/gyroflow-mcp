@@ -46,6 +46,25 @@ func init() {
 	}
 }
 
+// ParseAspectRatio parses an output.aspect_ratio such as "16:9".
+func ParseAspectRatio(s string) (w, h int, err error) {
+	if n, scanErr := fmt.Sscanf(s, "%d:%d", &w, &h); scanErr != nil || n != 2 || w <= 0 || h <= 0 {
+		return 0, 0, fmt.Errorf("output.aspect_ratio %q invalid; use W:H with positive integers, e.g. 16:9, 9:16, 1:1", s)
+	}
+	return w, h, nil
+}
+
+// FitAspectRatio returns the largest even-sized frame of aspect aw:ah that
+// fits inside a srcW x srcH source, e.g. 3840x2880 at 16:9 → 3840x2160.
+func FitAspectRatio(srcW, srcH, aw, ah int) (w, h int) {
+	if srcW*ah > srcH*aw { // source is wider: keep the height
+		h, w = srcH, srcH*aw/ah
+	} else {
+		w, h = srcW, srcW*ah/aw
+	}
+	return w &^ 1, h &^ 1
+}
+
 // rng checks that v (if non-nil) lies in [lo, hi], returning a named error on violation.
 func rng(name string, v *float64, lo, hi float64) error {
 	if v == nil {
@@ -158,6 +177,14 @@ func ValidateGyroflowConfig(c *GyroflowConfig) error {
 	if l := c.Lens; l != nil && l.DigitalLens != "" &&
 		l.DigitalLens != "gopro_superview" && l.DigitalLens != "gopro_hyperview" {
 		return fmt.Errorf("lens.digital_lens %q invalid; valid: gopro_superview, gopro_hyperview (or empty)", l.DigitalLens)
+	}
+	if o := c.Output; o != nil && o.AspectRatio != nil {
+		if _, _, err := ParseAspectRatio(*o.AspectRatio); err != nil {
+			return err
+		}
+		if o.OutputWidth != nil || o.OutputHeight != nil {
+			return fmt.Errorf("output.aspect_ratio and output.output_width/output_height are exclusive; set one or the other")
+		}
 	}
 	for i, k := range c.Keyframes {
 		if !keyframeTypes[k.Param] {

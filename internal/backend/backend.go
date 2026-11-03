@@ -263,6 +263,7 @@ type OutputConfig struct {
 	PixelFormat           *string  `json:"pixel_format,omitempty"`
 	OutputWidth           *int     `json:"output_width,omitempty"`
 	OutputHeight          *int     `json:"output_height,omitempty"`
+	AspectRatio           *string  `json:"aspect_ratio,omitempty"` // "W:H"; render_start turns it into output_width/height per source size
 	AudioCodec            *string  `json:"audio_codec,omitempty"`
 	Interpolation         *string  `json:"interpolation,omitempty"`
 	KeyframeDistance      *int     `json:"keyframe_distance,omitempty"`

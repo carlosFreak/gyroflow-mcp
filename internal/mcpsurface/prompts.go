@@ -121,7 +121,10 @@ NOT needed for this flow.
                                     {param:"Fov", timestamp_ms:12000,
                                     value:<v>, easing:"EaseIn"}
    Set ONLY what the user asked for; leave everything else unset (Gyroflow
-   defaults apply). Make exactly ONE render_start call with this config.
+   defaults apply). If the user gave no settings at all, omit config: the
+   server asks the user in a form (if your client cannot show MCP forms, ask
+   the user for smoothing, aspect ratio, crop, horizon lock and codec first). Make
+   exactly ONE render_start call with this config.
 
 6. render_start - call render_start ONCE with inputs=[%q], the preset_path
    from step 4 (omit entirely for case 4a), and the config from step 5 (omit
@@ -188,7 +191,7 @@ Follow this flow:
 3. Per file, in order (use ONLY MCP tools - no ffprobe/jq/grep, do not open raw_path):
    a. probe_metadata - call with the file path; read its summary. If summary.has_gyro is false and the user has no external -g for it, record it as SKIPPED with the reason (do not silently render it) and continue with the rest.
    b. find_lens_profile - query = summary.camera.make+" "+summary.camera.model (or summary.detected_source), width=summary.width, height=summary.height, fps=summary.fps. If gyroflow_auto_loads=true, render without preset_path (relay advice); else if best!=null use preset_path=best.path; else surface advice and skip/ask. Reuse a cached decision for identical camera+resolution+fps to avoid redundant lookups.
-   c. render_start - start the render with the chosen preset (or none per 3b); collect the returned job_id paired with the file.
+   c. render_start - start the render with the chosen preset (or none per 3b); collect the returned job_id paired with the file. If the user gave no settings, omit config on the FIRST file so the server asks the user, then pass the config it returns to every other file.
 
 4. Track progress without blocking:
    - Use render_list to see all jobs, and render_status per job_id for detail.
