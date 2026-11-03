@@ -110,7 +110,7 @@ func buildServer() *mcp.Server {
 			Sandboxed: sr.Sandboxed,
 			AppStore:  sr.AppStore,
 			Advice:    advice,
-		}
+		}.WithFFmpeg(ffmpeg)
 	}
 	idx := loadLensIndexFn(context.Background())
 	var opts []mcpsurface.ToolOption

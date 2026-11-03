@@ -26,6 +26,25 @@ type DoctorResult struct {
 	Sandboxed bool   `json:"sandboxed"`
 	AppStore  bool   `json:"app_store"`
 	Advice    string `json:"advice,omitempty"`
+	// FFmpeg is the ffmpeg binary color LUTs use; "" turns LUTs off.
+	FFmpeg string `json:"ffmpeg,omitempty"`
+	// LUTs is true when render_start can apply color LUTs.
+	LUTs bool `json:"luts"`
+}
+
+// lutsOffAdvice is what the doctor says when ffmpeg is missing.
+const lutsOffAdvice = "Color LUTs are off because ffmpeg is not installed: run `brew install ffmpeg` and restart the MCP server to have each render offer one."
+
+// WithFFmpeg records the ffmpeg binary in r, adding advice when it is missing.
+func (r DoctorResult) WithFFmpeg(ffmpeg string) DoctorResult {
+	r.FFmpeg, r.LUTs = ffmpeg, ffmpeg != ""
+	if ffmpeg == "" {
+		if r.Advice != "" {
+			r.Advice += " "
+		}
+		r.Advice += lutsOffAdvice
+	}
+	return r
 }
 
 // DoctorFunc is a function that inspects the gyroflow binary and returns a DoctorResult.

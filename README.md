@@ -162,7 +162,8 @@ existing output is only replaced if you ask to overwrite it.
 
 ## App Store or DMG / Homebrew
 
-`gyroflow_doctor` tells you which build was detected. Both are free.
+`gyroflow_doctor` tells you which build was detected. Both are free. It also
+reports whether ffmpeg is installed, which [color LUTs](#color-luts) need.
 
 | | Mac App Store | DMG / Homebrew |
 |---|---|---|

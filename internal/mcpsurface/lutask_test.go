@@ -211,3 +211,14 @@ func TestSuffixGetsAspectRatio(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorReportsFFmpeg(t *testing.T) {
+	off := DoctorResult{Advice: "ok."}.WithFFmpeg("")
+	if off.LUTs || !strings.Contains(off.Advice, "brew install ffmpeg") || !strings.HasPrefix(off.Advice, "ok. ") {
+		t.Fatalf("without ffmpeg: %+v", off)
+	}
+	on := DoctorResult{}.WithFFmpeg("/opt/homebrew/bin/ffmpeg")
+	if !on.LUTs || on.Advice != "" {
+		t.Fatalf("with ffmpeg: %+v", on)
+	}
+}
